@@ -1,0 +1,196 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:dev.micro-ui:jobs:0.1.0",
+  "title": "MCP Micro-UI Jobs 0.1.0",
+  "description": "Types for the dev.micro-ui/jobs MCP profile. Unknown properties are allowed and must be ignored.",
+  "$defs": {
+    "ExtensionSettings": {
+      "description": "capabilities.extensions[\"dev.micro-ui/jobs\"] and hostCapabilities.experimental[\"dev.micro-ui/jobs\"].",
+      "type": "object",
+      "required": ["version"],
+      "properties": { "version": { "type": "string", "pattern": "^0\\.1\\.\\d+$" } }
+    },
+    "ToolMeta": {
+      "description": "_meta[\"dev.micro-ui/jobs\"] on a tool.",
+      "type": "object",
+      "required": ["role"],
+      "properties": {
+        "role": { "enum": ["start", "status", "result", "cancel"] },
+        "statusTool": { "type": "string" },
+        "resultTool": { "type": "string" },
+        "cancelTool": { "type": "string" }
+      },
+      "if": { "properties": { "role": { "const": "start" } } },
+      "then": { "required": ["statusTool", "resultTool", "cancelTool"] }
+    },
+    "State": { "enum": ["working", "input_required", "completed", "failed", "cancelled"] },
+    "CompanionTools": {
+      "type": "object",
+      "required": ["statusTool", "resultTool", "cancelTool"],
+      "properties": {
+        "statusTool": { "type": "string" },
+        "resultTool": { "type": "string" },
+        "cancelTool": { "type": "string" }
+      }
+    },
+    "JobHandle": {
+      "description": "structuredContent of a start tool that accepted the job.",
+      "allOf": [{ "$ref": "#/$defs/CompanionTools" }],
+      "type": "object",
+      "required": ["jobId", "state", "pollIntervalMs", "ttlMs"],
+      "properties": {
+        "jobId": { "type": "string", "minLength": 1 },
+        "state": { "const": "working" },
+        "pollIntervalMs": { "type": "integer", "minimum": 100 },
+        "ttlMs": { "type": "integer", "minimum": 0 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "InputNeeded": {
+      "description": "structuredContent of a start tool that needs the View to collect input first. No job exists yet.",
+      "allOf": [{ "$ref": "#/$defs/CompanionTools" }],
+      "type": "object",
+      "required": ["state", "missing"],
+      "properties": {
+        "state": { "const": "input_required" },
+        "missing": { "type": "array", "items": { "type": "string" } },
+        "draft": { "type": "object", "description": "Arguments already supplied, to prefill the form." },
+        "pollIntervalMs": { "type": "integer" },
+        "ttlMs": { "type": "integer" }
+      }
+    },
+    "Error": {
+      "type": "object",
+      "required": ["code", "message"],
+      "properties": {
+        "code": { "enum": ["invalid_input", "not_found", "not_ready", "busy", "unavailable", "failed", "cancelled"] },
+        "message": { "type": "string" },
+        "retryAfterMs": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "ErrorResult": {
+      "description": "structuredContent of any profile tool result with isError: true.",
+      "type": "object",
+      "required": ["error"],
+      "properties": { "error": { "$ref": "#/$defs/Error" } }
+    },
+    "JobStatus": {
+      "type": "object",
+      "required": ["jobId", "state", "phase", "progress", "message", "elapsedMs", "pollIntervalMs", "updatedAt"],
+      "properties": {
+        "jobId": { "type": "string" },
+        "state": { "$ref": "#/$defs/State" },
+        "phase": { "type": "string" },
+        "progress": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "message": { "type": "string" },
+        "elapsedMs": { "type": "integer", "minimum": 0 },
+        "etaMs": { "type": "integer", "minimum": 0 },
+        "pollIntervalMs": { "type": "integer", "minimum": 100 },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "error": { "$ref": "#/$defs/Error" },
+        "data": { "type": "object" }
+      }
+    },
+    "Artifact": {
+      "type": "object",
+      "required": ["uri", "name", "mimeType", "size", "sha256", "role"],
+      "properties": {
+        "uri": { "type": "string" },
+        "name": { "type": "string" },
+        "mimeType": { "type": "string" },
+        "size": { "type": "integer", "minimum": 0 },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "role": { "enum": ["primary", "alternate", "auxiliary"] },
+        "durationMs": { "type": "integer", "minimum": 0 },
+        "url": { "type": "string", "format": "uri" }
+      }
+    },
+    "JobResult": {
+      "description": "structuredContent of the result tool for a completed job.",
+      "type": "object",
+      "required": ["jobId", "state", "artifacts"],
+      "properties": {
+        "jobId": { "type": "string" },
+        "state": { "const": "completed" },
+        "artifacts": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/Artifact" },
+          "contains": { "properties": { "role": { "const": "primary" } } },
+          "maxContains": 1
+        },
+        "data": { "type": "object" }
+      }
+    },
+    "StatusInput": {
+      "type": "object",
+      "required": ["jobId"],
+      "properties": {
+        "jobId": { "type": "string" },
+        "waitMs": { "type": "integer", "minimum": 0, "maximum": 30000 }
+      }
+    },
+    "ResultInput": {
+      "type": "object",
+      "required": ["jobId"],
+      "properties": { "jobId": { "type": "string" }, "inline": { "type": "boolean" } }
+    },
+    "CancelInput": {
+      "type": "object",
+      "required": ["jobId"],
+      "properties": { "jobId": { "type": "string" } }
+    },
+    "StartedNotification": {
+      "description": "View -> Host: micro-ui-jobs/notifications/started",
+      "type": "object",
+      "required": ["method", "params"],
+      "properties": {
+        "method": { "const": "micro-ui-jobs/notifications/started" },
+        "params": { "$ref": "#/$defs/JobHandle" }
+      }
+    },
+    "StatusNotification": {
+      "description": "View -> Host: micro-ui-jobs/notifications/status",
+      "type": "object",
+      "required": ["method", "params"],
+      "properties": {
+        "method": { "const": "micro-ui-jobs/notifications/status" },
+        "params": { "$ref": "#/$defs/JobStatus" }
+      }
+    },
+    "CompletedNotification": {
+      "description": "View -> Host: micro-ui-jobs/notifications/completed (once per job, terminal states only)",
+      "type": "object",
+      "required": ["method", "params"],
+      "properties": {
+        "method": { "const": "micro-ui-jobs/notifications/completed" },
+        "params": {
+          "type": "object",
+          "required": ["jobId", "state"],
+          "properties": {
+            "jobId": { "type": "string" },
+            "state": { "enum": ["completed", "failed", "cancelled"] },
+            "result": { "$ref": "#/$defs/JobResult" },
+            "error": { "$ref": "#/$defs/Error" }
+          }
+        }
+      }
+    },
+    "DeliveredNotification": {
+      "description": "Host -> View: micro-ui-jobs/notifications/delivered",
+      "type": "object",
+      "required": ["method", "params"],
+      "properties": {
+        "method": { "const": "micro-ui-jobs/notifications/delivered" },
+        "params": {
+          "type": "object",
+          "required": ["jobId"],
+          "properties": {
+            "jobId": { "type": "string" },
+            "artifacts": { "type": "array", "items": { "type": "string" } }
+          }
+        }
+      }
+    }
+  }
+}

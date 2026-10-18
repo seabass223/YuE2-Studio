@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Micro-UI Jobs reference host</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Micro-UI Jobs <span>reference host</span></h1>
+      <span id="server" class="pill">not connected</span>
+    </header>
+    <main>
+      <section class="panel">
+        <h2>Invoke</h2>
+        <label for="args">Start tool arguments (JSON)</label>
+        <textarea id="args" rows="7" spellcheck="false"></textarea>
+        <div class="row">
+          <button id="invoke" disabled>Invoke start tool</button>
+          <button id="invoke-empty" class="secondary" disabled>Invoke with no arguments</button>
+        </div>
+        <h2>Invoker log</h2>
+        <ol id="log"></ol>
+      </section>
+      <section class="panel">
+        <h2>Embedded micro UI <small id="view-state"></small></h2>
+        <div id="views"><p class="muted">The server's View renders here when a start tool is invoked.</p></div>
+        <h2>Delivered payload</h2>
+        <div id="delivered"><p class="muted">Nothing delivered yet.</p></div>
+      </section>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

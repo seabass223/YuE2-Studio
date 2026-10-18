@@ -1,0 +1,149 @@
+# YuE2 Studio
+
+A small local web UI for [YuE2](https://github.com/multimodal-art-projection/YuE) (M-A-P's lyrics + style → full-song model), tuned to run on a 12 GB RTX 3060 under Windows 11.
+
+## Install
+
+Requires Python 3.12 (with the `py` launcher), Node.js, and an NVIDIA GPU.
+
+Double-click **`Install.cmd`**. Double-clicking **`YuE2 Studio.exe`** works too; on first run it offers to install. The installer does the following:
+
+- Creates `.venv` with Python 3.12, PyTorch 2.10 (CUDA 12.8) and `yue2-infer` 0.1.6.
+- Downloads the weights (~7.8 GB) into `models\`.
+- Builds the web app and compiles `YuE2 Studio.exe` (icon included) with the C# compiler that ships with Windows.
+- Adds **YuE2 Studio** to the Start menu.
+
+To pin it, open Start, find **YuE2 Studio**, right-click it, and choose **Pin to Start** or **Pin to taskbar**. Re-running the installer is safe. Add `-Desktop` (`Install.cmd -Desktop`) to also get a desktop shortcut.
+
+`Uninstall.cmd` removes the shortcuts but leaves your songs and the models in place. To remove everything, delete the folder afterwards.
+
+## Running
+
+Launch **YuE2 Studio** from the Start menu. `YuE2 Studio.exe` runs `scripts\launch.pyw`. That starts the backend on `127.0.0.1:7862` with no console window, then opens the app in a chromeless Edge or Chrome window. Closing the window stops the backend after about 20 seconds. If no window ever connects, it stops after 3 minutes. MCP clients keep it running too (see below). Logs go to `logs\backend.log`.
+
+Songs are saved to `outputs\<timestamp>-<id>\`. Each folder has `audio.flac` (48 kHz stereo), `score.abc` (the generated melody and chord plan), and the full YuE2 artifact set.
+
+## Parameters
+
+| UI | YuE2 | Notes |
+|---|---|---|
+| Style | `style` | Genre, mood, instruments, vocal type. |
+| Lyrics | `lyrics` | Use section tags like `[Verse]`, `[Chorus]`, `[Bridge]`, `[Outro]`. |
+| Instrumental | (see below) | No lyrics. Lay the song out on the timeline. |
+| Timeline | (see below) | BPM, meter (4/4 or 3/4), and labeled sections in whole bars. Sets the exact length. |
+| Max length | `semantic_sampling.max_tokens` (25 tokens/s) | Songs with lyrics: length follows the lyrics, and this only caps it (max 6:00). |
+| Planning | `cot` | `full`: melody + chords score first (default). `melody`: melody only. `off`: no score. |
+| Seed | `seed` | Leave blank for random. |
+| Guidance (CFG) | `cfg_scale` | Auto = model default. Values above 1 run a second branch. |
+| Temperature / Top-p / Top-k / Repetition penalty | `semantic_sampling.*` | Song-token sampling. |
+| Flow steps | `GenerationConfig.ode_steps` | Acoustic flow-matching steps (default 32). |
+| Score (ABC) | `abc` | Supply or edit a score, e.g. one downloaded from an earlier song. |
+
+## Instrumentals on a timeline
+
+In Instrumental mode you set the BPM, the meter, and a row of sections (intro, verse, pre-chorus, chorus, bridge, interlude, instrumental, outro, silence), each a whole number of bars. You can drag a section's right edge, use −/+ or type the bar count, move sections, duplicate or delete them, or drag **Length** to rescale all sections to fit. The length is always exactly bars × beats ÷ BPM.
+
+YuE2 still composes the score; `backend/timeline.py` keeps it on the timeline:
+
+- **Header:** it is written from your BPM and meter. YuE2 picks the key and note unit.
+- **Sections:** each label is placed at its first bar. Lines of music are cut at section boundaries, and the instrument line is held to the vocal line's bar count. Lines may only start with music (no meter or key changes).
+- **Silence:** silence sections are written as full-bar rests without chords. Because YuE2 renders rests as quiet rather than silent, those bars are also muted in the audio.
+- **Repairs:** ties into rests are removed. If a planned score still fails validation, it is re-planned with the next seed (up to 3 times).
+
+Then the melody moves to the instrument voice.
+
+**Exact section timing** (on by default) exists because a single-pass render follows the score's notes but can drift up to about a bar early or late. YuE2 works in two stages: song tokens (25 per second), then audio. With this option, the song tokens are written one section at a time:
+
+- Each section is prompted with its slice of the score: 2 lead-in bars, its own bars, and 1 bar of the next section, so it doesn't wind down.
+- It continues from the tokens already written for those lead-in bars, and is held to exactly its length.
+- A section's own style text is added to the global style while its tokens are written.
+
+The whole token stream is then turned into audio in one pass, so there are no joins in the audio. `meta.json` has a per-section report. Turn the option off for a plain single-pass render. The audio is exactly the timeline's length either way.
+
+## Instrumentals from a pasted score
+
+With a score in **Advanced → Score (ABC)**, the timeline is replaced by a **Length** slider. `backend/fitted.py` fits the score to that length. Without a score or timeline (API only), it also steers YuE2's own free-running plan to the length:
+
+1. **Planning.** YuE2 writes the score with its own sampler. Once it has chosen tempo and meter, the target length becomes a bar count. The score can't end early, an `% outro` section is forced near the end (no `% silence` sections, no new sections after the outro), and the score closes at the target bar.
+2. **Tempo fit.** The `Q:` tempo is adjusted (at most ±15%, usually a few %) so the score's nominal length equals the target.
+3. **Instrumental conversion.** This follows YuE2's official instrumental recipe: the planned melody moves from the Vocal voice to the Ins voice (vendored MIT tools in `backend/vendor/yue2_instrumental`). The song is rendered with section tags instead of lyrics, and the style gets "Instrumental, …, no vocals, no singing, no choir, no spoken words".
+4. **Exact audio.** Song tokens are capped at the target and can't stop more than 1 s early. The file is then trimmed (with a 1.5 s fade if the cap cut it) or padded to the exact length.
+
+Each song folder also keeps the untouched model plan as `score-planned.abc`. `meta.json` records the plan and fit numbers.
+
+## Use from other apps (MCP)
+
+Other apps can generate songs through YuE2 Studio over the [Model Context Protocol](https://modelcontextprotocol.io). The `generate_song` tool:
+
+- returns a job handle immediately;
+- shows a small embedded UI (an [MCP App](https://github.com/modelcontextprotocol/ext-apps)) with live progress and a player, in hosts that support MCP Apps;
+- delivers the finished MP3, FLAC and score as MCP resources (`yue2://tracks/<id>/…`), each with its size and sha256.
+
+The flow follows **MCP Micro-UI Jobs**, a small profile defined in [`specs/mcp-micro-ui-jobs/`](specs/mcp-micro-ui-jobs/README.md). That folder is self-contained and includes reference invokers.
+
+To hand integration to another team, give them [`docs/MCP-INTEGRATION.md`](docs/MCP-INTEGRATION.md). It is a single self-contained file with the protocol, every tool and limit, the JSON Schema, a message trace and reference code.
+
+There are two ways to connect.
+
+**HTTP.** While YuE2 Studio is running, connect to `http://127.0.0.1:7862/mcp`. It accepts loopback connections only.
+
+**stdio**, for apps that launch MCP servers as a command, such as Claude Desktop:
+
+```json
+{
+  "mcpServers": {
+    "yue2": {
+      "command": "C:\\path\\to\\YuE2 Studio\\.venv\\Scripts\\python.exe",
+      "args": ["C:\\path\\to\\YuE2 Studio\\scripts\\mcp_stdio.py"]
+    }
+  }
+}
+```
+
+`scripts\mcp_stdio.py` starts the backend if it isn't running and relays to `/mcp`. It keeps the backend alive while connected. Some MCP clients stop a stdio server's whole process tree when they disconnect. If yours does, a backend that the shim started stops with it, but a backend you started from the Start menu keeps running.
+
+The backend also stays up for 5 minutes after the last MCP request, and for as long as an MCP-started song is queued or generating. Songs requested over MCP queue behind any song already running from the studio page, and they show up in the studio's progress bar and library like any other song. The studio never plays them by itself, because playback is up to the app that asked for them.
+
+| Tool | Purpose |
+|---|---|
+| `generate_song` | `style`, `lyrics`, `instrumental`, `max_seconds`, `seed`, `cot`, `timeline`, `temperature`, `cfg_scale`. Returns a job handle. With no style, MCP Apps hosts get a form instead. |
+| `job_status` | Status and 0–1 progress. Pass `waitMs` (up to 30000) to long-poll with progress notifications. |
+| `job_result` | Artifact descriptors and resource links once the job has `completed`. Pass `inline: true` to also embed the MP3. |
+| `job_cancel` | Stops a queued or running job. |
+
+To try it without an AI host:
+
+```powershell
+# headless: start a song, follow progress, download and verify the files
+.venv\Scripts\python.exe specs\mcp-micro-ui-jobs\reference\invoker\invoker.py --url http://127.0.0.1:7862/mcp --args '{\"style\": \"lofi piano\", \"instrumental\": true, \"max_seconds\": 30}' --out out
+# browser host on :5180 that renders the micro UI and shows the delivered payload
+cd specs\mcp-micro-ui-jobs\reference\host; npm install; npm run dev
+```
+
+## VRAM on a 12 GB card
+
+YuE2 is a mixture-of-transformers. It has an autoregressive (AR) half (~4.4 GB) for the score and song tokens, and a non-autoregressive (NAR) half (~2.8 GB) for acoustic flow matching. Upstream recommends 24 GB. `backend/engine.py` keeps only one half on the GPU at a time:
+
+- PyTorch is capped at 10 GiB (`memory_budget_gib=12`), and the VAE decodes in 512-frame tiles.
+- During score and song-token generation, the NAR layers stay in system RAM.
+- During synthesis, the AR layers run the context prefill, then swap out for the NAR layers for the solver.
+- Between songs, all weights stay in system RAM, so idle VRAM is only the CUDA context.
+
+Windows PyTorch wheels ship without FlashAttention, so the decoder's CUDA graph uses cuDNN attention instead. Startup probes for this automatically.
+
+## Development
+
+```powershell
+# backend (port 7862)
+.venv\Scripts\python.exe backend\server.py
+# frontend with hot reload on :5173, proxies /api to the backend
+cd frontend; npm run dev
+```
+
+`npm run build` builds both the studio (`frontend\dist`) and the MCP micro UI. The micro UI is `frontend\src\micro`, built into one self-contained file, `frontend\dist-micro\micro.html`. The backend reads that file on every request, so rebuilding it needs no restart.
+
+Regenerate icons after editing `assets\icon.svg` with `npm run icons` in `frontend\`.
+
+## License
+
+YuE2 inference code is Apache 2.0. The weights are **CC BY-NC 4.0 with an additional creator permission**: individuals and content creators may use YuE2 and monetize the songs it generates, with no fees or royalties. Companies need a separate commercial license for the weights. Illegal, harmful, deceptive or unethical use is prohibited, and crediting YuE2 (e.g. #YuE2) is encouraged but optional. See the [upstream README](https://github.com/multimodal-art-projection/YuE).

@@ -1,0 +1,6 @@
+# torch 2.10.0 (CUDA 12.8 build) is installed first by scripts/setup.ps1:
+#   pip install torch==2.10.0 --index-url https://download.pytorch.org/whl/cu128
+yue2-infer @ https://github.com/multimodal-art-projection/YuE/releases/download/yue2-v0.1.6/yue2_infer-0.1.6-py3-none-any.whl
+fastapi==0.118.0
+uvicorn[standard]==0.37.0
+mcp==2.3.0

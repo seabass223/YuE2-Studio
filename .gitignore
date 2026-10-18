@@ -1,0 +1,11 @@
+.venv/
+models/
+outputs/
+logs/
+__pycache__/
+frontend/node_modules/
+frontend/dist/
+YuE2 Studio.exe
+frontend/dist-micro/
+specs/mcp-micro-ui-jobs/reference/host/node_modules/
+specs/mcp-micro-ui-jobs/reference/host/dist/
