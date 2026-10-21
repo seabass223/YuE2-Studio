@@ -308,9 +308,13 @@ def build(engine: Engine, *, base_url: str) -> tuple[MCPServer, Jobs]:
             "bars: 1-64, description?: str}]}. Overrides max_seconds."))] = None,
         temperature: Annotated[float | None, Field(ge=0.05, le=2.0, description="Sampling temperature (default 1.0).")] = None,
         cfg_scale: Annotated[float | None, Field(ge=0, le=5, description="Style adherence (default: model's own).")] = None,
+        vocal_check: Annotated[bool, Field(description=(
+            "Instrumental only. Listen for stray singing and re-render the part that has it, up to 2 "
+            "more times."))] = True,
     ) -> CallToolResult:
         raw = {"style": style or "", "lyrics": lyrics or "", "instrumental": instrumental, "max_seconds": max_seconds,
-               "seed": seed, "cot": cot, "timeline": timeline, "temperature": temperature, "cfg_scale": cfg_scale}
+               "seed": seed, "cot": cot, "timeline": timeline, "temperature": temperature, "cfg_scale": cfg_scale,
+               "vocal_check": vocal_check}
         missing = [name for name, value in (("style", style), ("lyrics", instrumental or lyrics)) if not
                    (value.strip() if isinstance(value, str) else value)]
         if missing and client_supports_apps(ctx):

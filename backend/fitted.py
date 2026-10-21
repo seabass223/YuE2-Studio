@@ -9,7 +9,8 @@ steered to the requested length:
      and the score is closed at the first voice-group boundary that reaches the target.
   3. The tempo line is nudged so bars x beats / tempo equals the target exactly.
   4. Following YuE2's official instrumental recipe, the planned vocal melody moves to the
-     instrument voice and the song is rendered with section tags instead of lyrics.
+     instrument voice and the song is rendered with section tags instead of lyrics. Sung-section
+     labels (verse, chorus, ...) are rendered as "instrumental" (see render_labels).
   5. Song tokens are capped at the target, and the audio is trimmed/padded to the exact length.
 """
 from __future__ import annotations
@@ -32,6 +33,7 @@ from yue2.protocol import ABC_END, EOD, SongRequest, token_prefixes  # noqa: E40
 ABC_BUDGET = 8192  # tokens; ~15-20 per bar, the stock 4096 can truncate long plans
 MAX_TEMPO_CHANGE = 0.15
 NO_VOICE = ("no vocals", "no singing", "no choir", "no spoken words")
+SUNG_SECTIONS = ("verse", "pre-chorus", "chorus", "bridge")
 
 
 def instrumental_style(style):
@@ -59,6 +61,25 @@ def planning_sections(seconds):
 def lyric_tags(abc):
     labels = [line[2:] for line in abc.splitlines() if line.startswith("% ")]
     return "\n\n".join("[" + label.title() + "]" for label in labels) + ("\n" if labels else "")
+
+
+def render_labels(abc):
+    """The score as an instrumental is rendered: sung-section labels become "instrumental".
+
+    YuE2 learned its section labels from songs, where verses, choruses and bridges are almost
+    always sung, so a "% chorus" / "[Chorus]" prompt often comes back with vocals even when the
+    Vocal voice is all rests. The planned score keeps the real labels (they shape the
+    composition); only the rendering prompt is relabeled. Repeats of one label are merged."""
+    out, last = [], None
+    for line in abc.splitlines():
+        if line.startswith("% "):
+            label = line[2:].strip()
+            line = "% instrumental" if label in SUNG_SECTIONS else line
+            if line == last:
+                continue
+            last = line
+        out.append(line)
+    return "\n".join(out) + "\n"
 
 
 def _bars_in(line):

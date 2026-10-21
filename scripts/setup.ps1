@@ -1,6 +1,6 @@
 # Installs YuE2 Studio. Safe to re-run (finished steps are quick the second time).
 #   - Python 3.12 venv with CUDA PyTorch + yue2-infer + FastAPI
-#   - YuE2-3B and YuE2-Vae weights (~7.8 GB) into .\models
+#   - YuE2-3B and YuE2-Vae weights (~7.8 GB) and the vocal check (~410 MB) into .\models
 #   - Web app build + icons
 #   - "YuE2 Studio.exe" launcher and Start menu entry
 # Double-click Install.cmd in the root folder to run it. -Pause keeps the window open at the end.
@@ -31,13 +31,13 @@ try {
 
     Step "Installing PyTorch (CUDA 12.8) and YuE2"
     & $python -m pip install --upgrade pip; Check
-    & $python -m pip install torch==2.10.0 --index-url https://download.pytorch.org/whl/cu128; Check
+    & $python -m pip install torch==2.10.0 torchaudio==2.10.0 --index-url https://download.pytorch.org/whl/cu128; Check
     & $python -m pip install -r (Join-Path $root "backend\requirements.txt"); Check
 
     Step "Downloading model weights (skipped if present)"
     Push-Location (Join-Path $root "backend")
     try {
-        & $python -c "import engine; engine.models_present() or engine.download_models(); print('models ok')"; Check
+        & $python -c "import engine, vocal_check; engine.models_present() or engine.download_models(); vocal_check.downloaded() or vocal_check.load(); print('models ok')"; Check
     } finally { Pop-Location }
 
     Step "Building the web app"

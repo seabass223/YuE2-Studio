@@ -31,12 +31,14 @@ from yue2.storage import MODEL_FILES, MODEL_LICENSES
 
 import fitted
 import timeline
+import vocal_check
 
 ROOT = Path(__file__).resolve().parents[1]
 MODELS = ROOT / "models"
 OUTPUTS = ROOT / "outputs"
 FRAME_RATE = 25  # 48 kHz audio / 1920-sample VAE hop
 MAX_SECONDS = 360  # 9000 song tokens, the checkpoint's default ceiling
+VOCAL_RETRIES = 2  # extra renders of an instrumental when the vocal check hears singing
 REPOS = {"YuE2-3B": "m-a-p/YuE2-3B", "YuE2-Vae": "m-a-p/YuE2-Vae"}
 
 
@@ -313,6 +315,7 @@ def normalize_params(raw):
     return {
         "style": style, "lyrics": lyrics, "instrumental": instrumental, "cot": cot, "seed": seed, "abc": abc,
         "timeline": layout.to_dict() if layout else None,
+        "vocal_check": instrumental and bool(raw.get("vocal_check", True)),
         "cfg_scale": None if cfg in (None, "") else _float(raw, "cfg_scale", 1.0, 0.0, 5.0),
         "max_seconds": round(layout.seconds, 2) if layout else int(_float(raw, "max_seconds", 240, 10, MAX_SECONDS)),
         "temperature": _float(raw, "temperature", 1.0, 0.05, 2.0),
@@ -448,7 +451,7 @@ class Engine:
         target = p["max_seconds"]
         cancelled = lambda: job.cancel  # noqa: E731
         style = fitted.instrumental_style(p["style"])
-        plan_info, planned_quarters = {}, None
+        plan_info, planned_quarters, layout = {}, None, None
         raw = p["abc"]
         if p.get("timeline"):
             layout = timeline.Timeline.parse(p["timeline"])
@@ -476,17 +479,22 @@ class Engine:
         # the last second so the music fills the target instead of trailing into padding.
         tokens = int(round(target * FRAME_RATE))
         semantic = {**semantic, "max_tokens": tokens, "min_tokens": tokens - FRAME_RATE}
-        sections = None
-        if p.get("timeline") and layout.strict:
-            song, sections = self._render_sections(job, pipe, p, layout, abc, has_chords, semantic, cancelled)
+        if layout and layout.strict:
+            song, sections, check = self._render_sections(job, pipe, p, layout, abc, has_chords, semantic, cancelled)
         else:
-            song = pipe(style=style, lyrics=fitted.lyric_tags(abc), cot="full" if has_chords else "melody",
-                        seed=p["seed"], abc=abc, cfg_scale=p["cfg_scale"], semantic_sampling=semantic,
-                        cancelled=cancelled)
-        if p.get("timeline"):
+            render = fitted.render_labels(abc)
+
+            def whole(attempt, first):  # a single-pass render always starts over, with a new seed
+                job.part = f"Vocal retry {attempt} of {VOCAL_RETRIES}" if attempt else None
+                return pipe(style=style, lyrics=fitted.lyric_tags(render), cot="full" if has_chords else "melody",
+                            seed=p["seed"] + 1000 * attempt, abc=render, cfg_scale=p["cfg_scale"],
+                            semantic_sampling=semantic, cancelled=cancelled), None
+
+            song, sections, check = self._render_checked(job, pipe, p, layout, whole)
+        if layout:
             song.audio = timeline.silence_audio(song.audio, song.sample_rate, layout)
         song.audio = fitted.exact_length(song.audio, song.sample_rate, target, song.truncated["semantic"])
-        return song, {"plan": plan_info, "fit": fit_info, "raw_score": raw, "sections": sections}
+        return song, {"plan": plan_info, "fit": fit_info, "raw_score": raw, "sections": sections, "vocal_check": check}
 
     def _render_sections(self, job, pipe, p, layout, abc, has_chords, semantic, cancelled):
         """Exact section timing without seams: song tokens are written section by section, each
@@ -494,26 +502,86 @@ class Engine:
         render drifts up to ~1 bar); then the whole token stream becomes audio in one pass."""
         start = time.perf_counter()
         cot = "full" if has_chords else "melody"
-
-        def on_section(index, label):
-            job.part = f"Section {index + 1} of {len(layout.sections)}: {label}"
-
         sampling = {key: semantic[key] for key in ("temperature", "top_p", "top_k", "repetition_penalty")}
-        tokens, report = timeline.chain_song_tokens(
-            pipe, layout, abc, style=p["style"], cot=cot, seed=p["seed"], cfg_scale=p["cfg_scale"],
-            sampling=sampling, cancelled=cancelled, on_section=on_section)
-        job.part = None
-        request = SongRequest(style=fitted.instrumental_style(p["style"]), lyrics=fitted.lyric_tags(abc), cot=cot,
-                              seed=p["seed"], abc=abc, cfg_scale=p["cfg_scale"])
+        render = fitted.render_labels(abc)
+        request = SongRequest(style=fitted.instrumental_style(p["style"]), lyrics=fitted.lyric_tags(render), cot=cot,
+                              seed=p["seed"], abc=render, cfg_scale=p["cfg_scale"])
         plan = pipe.plan(request=request)
-        result = SemanticResult(plan, tokens, {"sections": report}, report[-1]["hit_cap"])
-        latents = pipe.synthesize(result, cancelled=cancelled)
-        if cancelled():
-            raise InterruptedError("Cancelled before VAE")
-        audio = pipe.decode(latents)
-        song = SongResult(audio, 48000, result, latents, pipe.effective_config(request), pipe.weights,
-                          {"e2e_seconds": time.perf_counter() - start}, "timeline-sections")
-        return song, report
+        previous = {"tokens": None, "report": []}
+
+        def sections(attempt, first):  # (re)write the tokens from section `first` on, then render all
+            retry = f"Vocal retry {attempt} of {VOCAL_RETRIES}" if attempt else ""
+
+            def on_section(index, label):
+                job.part = (f"{retry} · " if retry else "") + f"Section {index + 1} of {len(layout.sections)}: {label}"
+
+            tokens, report = timeline.chain_song_tokens(
+                pipe, layout, abc, style=p["style"], cot=cot, seed=p["seed"], cfg_scale=p["cfg_scale"],
+                sampling=sampling, cancelled=cancelled, on_section=on_section,
+                tokens=previous["tokens"], first=first, attempt=attempt)
+            report = previous["report"][:first] + report
+            previous.update(tokens=tokens, report=report)
+            job.part = retry or None
+            result = SemanticResult(plan, tokens, {"sections": report}, report[-1]["hit_cap"])
+            latents = pipe.synthesize(result, cancelled=cancelled)
+            if cancelled():
+                raise InterruptedError("Cancelled before VAE")
+            audio = pipe.decode(latents)
+            song = SongResult(audio, 48000, result, latents, pipe.effective_config(request), pipe.weights,
+                              {"e2e_seconds": time.perf_counter() - start}, "timeline-sections")
+            return song, report
+
+        return self._render_checked(job, pipe, p, layout, sections)
+
+    def _render_checked(self, job, pipe, p, layout, render):
+        """Render; with the vocal check on, listen for singing and render again from the first
+        section that has it (up to VOCAL_RETRIES more times), keeping the render with the least.
+        render(attempt, first) -> (song, report) writes the song from section index `first` on.
+        Returns (song, report, check report for meta.json, or None with the check off)."""
+        start = time.perf_counter()
+        song, report = render(0, 0)
+        if not p.get("vocal_check"):
+            return song, report, None
+        if not vocal_check.available():
+            return song, report, {"skipped": "The vocal check isn't installed. Run Install.cmd again."}
+        spans = timeline.section_spans(layout) if layout else [("song", 0.0, len(song.audio) / song.sample_rate)]
+        check, best = {"threshold": vocal_check.THRESHOLD, "attempts": []}, None
+        for attempt in range(VOCAL_RETRIES + 1):
+            if attempt:
+                song, report = render(attempt, first)
+            try:
+                heard = self._listen(pipe, song, layout, spans)
+            except Exception as exc:  # e.g. no network for the first weights download
+                traceback.print_exc()
+                check["skipped"] = f"{type(exc).__name__}: {exc}"
+                break
+            check["attempts"].append({"from": spans[first][0] if attempt else None,
+                                      "sections": [{"label": label, "singing": score}
+                                                   for (label, _, _), score in zip(spans, heard)]})
+            if best is None or max(heard) < best[0]:
+                best = (max(heard), song, report, attempt)
+            singing = [i for i, score in enumerate(heard) if score >= vocal_check.THRESHOLD]
+            if not singing:
+                break
+            first = singing[0]
+        job.part = None
+        if best is None:
+            return song, report, check
+        _, song, report, check["kept"] = best
+        check["clean"] = best[0] < vocal_check.THRESHOLD
+        song.timing["e2e_seconds"] = max(song.timing["e2e_seconds"], time.perf_counter() - start)  # all attempts
+        return song, report, check
+
+    def _listen(self, pipe, song, layout, spans):
+        """Singing probability per (label, start, end) span of the song, as it will be saved."""
+        audio = timeline.silence_audio(song.audio, song.sample_rate, layout) if layout else song.audio
+        if not vocal_check.loaded():
+            label = "Loading vocal check" if vocal_check.downloaded() else "Downloading vocal check (~410 MB)"
+            with pipe._status(label):
+                vocal_check.load()
+        with pipe._status("Checking for vocals"):
+            rows = vocal_check.windows(audio, song.sample_rate, device=pipe.device)
+        return vocal_check.span_scores(rows, [(start, end) for _, start, end in spans])
 
 
     def _save(self, job, song, extra):
@@ -527,7 +595,8 @@ class Engine:
                 "truncated": bool(song.truncated["semantic"]),
                 "seconds_taken": round(song.timing["e2e_seconds"], 1),
                 "has_score": song.abc is not None, "params": p,
-                "plan": extra.get("plan"), "fit": extra.get("fit"), "sections": extra.get("sections")}
+                "plan": extra.get("plan"), "fit": extra.get("fit"), "sections": extra.get("sections"),
+                "vocal_check": extra.get("vocal_check")}
         (directory / "meta.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
         return meta
 

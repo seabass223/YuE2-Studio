@@ -379,37 +379,49 @@ LEAD_BARS = 2  # bars of already-written song tokens each section continues from
 LOOKAHEAD_BARS = 1  # bars of the next section shown in the score, so a section doesn't wind down
 
 
+def section_spans(timeline: Timeline):
+    """[(label, start, end)] in seconds, on the 25 tokens/s grid that sections are written on."""
+    seconds_per_bar = timeline.bar_quarters * 60 / timeline.bpm
+    spans, bar = [], 0
+    for label, count in timeline.sections:
+        spans.append((label, round(bar * seconds_per_bar * 25) / 25, round((bar + count) * seconds_per_bar * 25) / 25))
+        bar += count
+    return spans
+
+
 @torch.inference_mode()
 def chain_song_tokens(pipe, timeline: Timeline, abc, *, style, cot, seed, cfg_scale, sampling,
-                      cancelled=None, on_section=None):
+                      cancelled=None, on_section=None, tokens=None, first=0, attempt=0):
     """Write the song's tokens one section at a time, each held to exactly its length.
 
     Section k is prompted with the score of [2 lead-in bars + its bars + 1 lookahead bar] and
     continues from the song tokens already written for those lead-in bars, so it starts exactly
     at its downbeat in the same sound. Its own style text is added to the global style here (the
     tokens carry it); the audio is then rendered from all tokens in one pass, so there are no
-    joins in the audio. Returns (codec tokens, per-section report)."""
+    joins in the audio. Given the tokens of an earlier pass, sections before `first` are kept and
+    the rest are written again with new seeds (+1000 per attempt). Returns (codec tokens, report
+    for the sections written)."""
     from yue2.protocol import CODEC_OFFSET, negative_prefix, resolve_sampling
     tokenizer = pipe.tokenizer
     seconds_per_bar = timeline.bar_quarters * 60 / timeline.bpm
     to_tokens = lambda bar: int(round(bar * seconds_per_bar * 25))  # noqa: E731  (25 tokens/s)
-    labels = bar_labels(timeline)
+    previous = list(tokens or [])
     tokens, report, bar = [], [], 0
     descriptions = timeline.descriptions or [""] * len(timeline.sections)
     for index, ((label, count), text) in enumerate(zip(timeline.sections, descriptions)):
         start, end = bar, bar + count
         bar = end
+        if index < first:
+            continue
+        if index == first:
+            tokens = previous[:to_tokens(start)]
         last = index == len(timeline.sections) - 1
         lead = min(LEAD_BARS, start)
         ahead = 0 if last else min(LOOKAHEAD_BARS, timeline.bars - end)
-        score = slice_score(abc, timeline, start - lead, end + ahead)
-        tags = []
-        for b in range(start - lead, end + ahead):
-            if not tags or tags[-1] != labels[b]:
-                tags.append(labels[b])
+        score = fitted.render_labels(slice_score(abc, timeline, start - lead, end + ahead))
         section_style = fitted.instrumental_style(style.strip().rstrip(".,") + (". " + text if text else ""))
-        request = SongRequest(style=section_style, lyrics="\n\n".join(f"[{t.title()}]" for t in tags) + "\n",
-                              cot=cot, seed=seed + index, abc=score, cfg_scale=cfg_scale)
+        request = SongRequest(style=section_style, lyrics=fitted.lyric_tags(score), cot=cot,
+                              seed=seed + index + 1000 * attempt, abc=score, cfg_scale=cfg_scale)
         abc_ids = tokenizer.encode(score)
         context = [t + CODEC_OFFSET for t in tokens[to_tokens(start - lead):to_tokens(start)]]
         prefix = token_prefixes(request, tokenizer, abc_ids) + context

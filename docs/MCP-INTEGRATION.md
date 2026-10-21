@@ -193,6 +193,7 @@ below the table):
 | `timeline` | object \| null | null | Instrumentals only. An exact section layout that **overrides `max_seconds`** (see 4.1.1). |
 | `temperature` | number \| null | null (1.0) | 0.05–2.0. Sampling temperature. |
 | `cfg_scale` | number \| null | null (model default) | 0–5. Style adherence. Values above 1 cost a second branch. |
+| `vocal_check` | boolean | `true` | Instrumentals only. YuE2 sometimes sings over an instrumental anyway. The check listens for singing and re-renders from the first section that has it, up to 2 more times. Each retry costs roughly one more render of the rest of the song. |
 
 **Validation.** These failures return `isError: true` with error code `invalid_input`:
 

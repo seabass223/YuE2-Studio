@@ -27,6 +27,7 @@ export const DEFAULT_PARAMS: GenerateParams = {
   repetition_penalty: 1.2,
   ode_steps: 32,
   abc: "",
+  vocal_check: true,
 }
 
 const LYRICS_PLACEHOLDER = `[Intro]
@@ -115,7 +116,18 @@ export function GenerateForm({
           </div>
         </div>
         {params.instrumental ? (
-          <p className="text-xs text-muted-foreground">No vocals. Lay out the song's sections below.</p>
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-xs text-muted-foreground">No vocals. Lay out the song's sections below.</p>
+            <div
+              className="flex shrink-0 items-center gap-2"
+              title="YuE2 sometimes sings anyway. Listen for it and re-render the part that has singing (up to 2 times)."
+            >
+              <Label htmlFor="vocal-check" className="text-xs font-normal text-muted-foreground">
+                Fix stray vocals
+              </Label>
+              <Switch id="vocal-check" checked={params.vocal_check} onCheckedChange={(on) => set("vocal_check", on)} />
+            </div>
+          </div>
         ) : (
           <Textarea
             id="lyrics"

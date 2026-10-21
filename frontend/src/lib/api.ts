@@ -50,6 +50,8 @@ export interface GenerateParams {
   repetition_penalty: number
   ode_steps: number
   abc: string
+  /** Instrumentals: listen for stray singing and re-render the part that has it (up to 2 times). */
+  vocal_check: boolean
 }
 
 export interface Track {

@@ -8,8 +8,8 @@ Requires Python 3.12 (with the `py` launcher), Node.js, and an NVIDIA GPU.
 
 Double-click **`Install.cmd`**. Double-clicking **`YuE2 Studio.exe`** works too; on first run it offers to install. The installer does the following:
 
-- Creates `.venv` with Python 3.12, PyTorch 2.10 (CUDA 12.8) and `yue2-infer` 0.1.6.
-- Downloads the weights (~7.8 GB) into `models\`.
+- Creates `.venv` with Python 3.12, PyTorch 2.10 (CUDA 12.8), `yue2-infer` 0.1.6 and Demucs.
+- Downloads the weights (~7.8 GB, plus ~410 MB for the [vocal check](#stray-vocals)) into `models\`.
 - Builds the web app and compiles `YuE2 Studio.exe` (icon included) with the C# compiler that ships with Windows.
 - Adds **YuE2 Studio** to the Start menu.
 
@@ -30,6 +30,7 @@ Songs are saved to `outputs\<timestamp>-<id>\`. Each folder has `audio.flac` (48
 | Style | `style` | Genre, mood, instruments, vocal type. |
 | Lyrics | `lyrics` | Use section tags like `[Verse]`, `[Chorus]`, `[Bridge]`, `[Outro]`. |
 | Instrumental | (see below) | No lyrics. Lay the song out on the timeline. |
+| Fix stray vocals | (see [below](#stray-vocals)) | Instrumentals: listen for singing and re-render the part that has it. On by default. |
 | Timeline | (see below) | BPM, meter (4/4 or 3/4), and labeled sections in whole bars. Sets the exact length. |
 | Max length | `semantic_sampling.max_tokens` (25 tokens/s) | Songs with lyrics: length follows the lyrics, and this only caps it (max 6:00). |
 | Planning | `cot` | `full`: melody + chords score first (default). `melody`: melody only. `off`: no score. |
@@ -50,7 +51,7 @@ YuE2 still composes the score; `backend/timeline.py` keeps it on the timeline:
 - **Silence:** silence sections are written as full-bar rests without chords. Because YuE2 renders rests as quiet rather than silent, those bars are also muted in the audio.
 - **Repairs:** ties into rests are removed. If a planned score still fails validation, it is re-planned with the next seed (up to 3 times).
 
-Then the melody moves to the instrument voice.
+Then the melody moves to the instrument voice. Your labels shape the composition, but the audio is rendered with verse, pre-chorus, chorus and bridge renamed to `instrumental` (see [Stray vocals](#stray-vocals)).
 
 **Exact section timing** (on by default) exists because a single-pass render follows the score's notes but can drift up to about a bar early or late. YuE2 works in two stages: song tokens (25 per second), then audio. With this option, the song tokens are written one section at a time:
 
@@ -66,10 +67,28 @@ With a score in **Advanced → Score (ABC)**, the timeline is replaced by a **Le
 
 1. **Planning.** YuE2 writes the score with its own sampler. Once it has chosen tempo and meter, the target length becomes a bar count. The score can't end early, an `% outro` section is forced near the end (no `% silence` sections, no new sections after the outro), and the score closes at the target bar.
 2. **Tempo fit.** The `Q:` tempo is adjusted (at most ±15%, usually a few %) so the score's nominal length equals the target.
-3. **Instrumental conversion.** This follows YuE2's official instrumental recipe: the planned melody moves from the Vocal voice to the Ins voice (vendored MIT tools in `backend/vendor/yue2_instrumental`). The song is rendered with section tags instead of lyrics, and the style gets "Instrumental, …, no vocals, no singing, no choir, no spoken words".
+3. **Instrumental conversion.** This follows YuE2's official instrumental recipe: the planned melody moves from the Vocal voice to the Ins voice (vendored MIT tools in `backend/vendor/yue2_instrumental`). The song is rendered with section tags instead of lyrics (sung sections as `[Instrumental]`), and the style gets "Instrumental, …, no vocals, no singing, no choir, no spoken words".
 4. **Exact audio.** Song tokens are capped at the target and can't stop more than 1 s early. The file is then trimmed (with a 1.5 s fade if the cap cut it) or padded to the exact length.
 
 Each song folder also keeps the untouched model plan as `score-planned.abc`. `meta.json` records the plan and fit numbers.
+
+## Stray vocals
+
+YuE2 learned from songs, so it sometimes sings over an instrumental anyway. Upstream says the recipe doesn't guarantee no vocals ([YuE#208](https://github.com/multimodal-art-projection/YuE/issues/208)). The main trigger is a sung-section label in the render prompt. Verses, choruses and bridges almost always have vocals in the training songs, even when the score's Vocal voice is all rests.
+
+Every instrumental path therefore renders verse, pre-chorus, chorus and bridge as `instrumental` (`fitted.render_labels`). Planning still uses your labels, and `score-planned.abc` keeps them. In 129 test renders, scored for singing on a Demucs vocal stem with an AudioSet classifier:
+
+- Chorus sections leaked vocals 36% of the time with `[Chorus]` / `% chorus` in the prompt (12 of 33), and 14% with `instrumental` (7 of 50).
+- On cinematic and electronic styles, leaks went from 5 of 16 songs to none.
+- On top of the relabeling, two other changes made pop and rock worse. Dropping the style's "no vocals…" words leaked in 5 of 12 songs, and adding CFG 1.5 in 4 of 12, against 2 of 12 without either.
+
+Genres that imply a singer, like pop or rock, still leak now and then. **Fix stray vocals** (on by default) catches those:
+
+- **Listening.** `backend/vocal_check.py` splits the finished audio with Demucs and runs the AudioSet AST classifier on the vocal stem in 5 s windows. Neither works alone: AST on the full mix barely reacts to singing, and the vocal stem also picks up flute, violin and synth leads. Songs with real vocals score 0.2–0.6, clean instrumentals 0–0.05, and a section at 0.15 or more counts as sung.
+- **Retrying.** The song is rendered again from the first sung section on, with new seeds. With exact section timing, the sections before it are kept. This happens at most twice, and the attempt with the least singing is kept.
+- **Cost.** A check takes about 2 s. A retry costs roughly one more render of the rest of the song.
+
+`meta.json` records each attempt's per-section scores under `vocal_check`.
 
 ## Use from other apps (MCP)
 
@@ -106,7 +125,7 @@ The backend also stays up for 5 minutes after the last MCP request, and for as l
 
 | Tool | Purpose |
 |---|---|
-| `generate_song` | `style`, `lyrics`, `instrumental`, `max_seconds`, `seed`, `cot`, `timeline`, `temperature`, `cfg_scale`. Returns a job handle. With no style, MCP Apps hosts get a form instead. |
+| `generate_song` | `style`, `lyrics`, `instrumental`, `max_seconds`, `seed`, `cot`, `timeline`, `temperature`, `cfg_scale`, `vocal_check`. Returns a job handle. With no style, MCP Apps hosts get a form instead. |
 | `job_status` | Status and 0–1 progress. Pass `waitMs` (up to 30000) to long-poll with progress notifications. |
 | `job_result` | Artifact descriptors and resource links once the job has `completed`. Pass `inline: true` to also embed the MP3. |
 | `job_cancel` | Stops a queued or running job. |
