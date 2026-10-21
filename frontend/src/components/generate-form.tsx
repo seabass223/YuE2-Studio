@@ -1,6 +1,8 @@
-import { useState } from "react"
-import { ChevronDownIcon, DicesIcon } from "lucide-react"
+import { useRef, useState } from "react"
+import { ChevronDownIcon, DicesIcon, FileAudioIcon, Loader2Icon } from "lucide-react"
+import { toast } from "sonner"
 
+import { JobProgress } from "@/components/job-progress"
 import { Button } from "@/components/ui/button"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { Input } from "@/components/ui/input"
@@ -10,7 +12,7 @@ import { Slider } from "@/components/ui/slider"
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { DEFAULT_TIMELINE, TimelineEditor } from "@/components/timeline-editor"
-import { formatTime, type Cot, type GenerateParams } from "@/lib/api"
+import { api, formatTime, type Cot, type GenerateParams, type Job } from "@/lib/api"
 
 export const DEFAULT_PARAMS: GenerateParams = {
   style: "",
@@ -76,14 +78,36 @@ function SliderField({
 export function GenerateForm({
   params,
   onChange,
+  job,
+  audioImport,
 }: {
   params: GenerateParams
   onChange: (p: GenerateParams) => void
+  /** The backend's current job: a running transcription shows its progress by the score. */
+  job: Job | null
+  /** SheetSage2 is installed. */
+  audioImport: boolean
 }) {
   const [advanced, setAdvanced] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const fileInput = useRef<HTMLInputElement>(null)
   const set = <K extends keyof GenerateParams>(key: K, value: GenerateParams[K]) => onChange({ ...params, [key]: value })
   // The timeline always plans with chords: they keep YuE2's audio on the beat grid (melody-only drifts).
   const timelineActive = params.instrumental && !params.abc.trim()
+  const busy = job?.state === "queued" || job?.state === "running"
+  const transcribing = busy && job?.kind === "transcribe"
+
+  // App fills in the score when the job finishes.
+  const importAudio = async (file: File) => {
+    setUploading(true)
+    try {
+      await api.transcribe(file)
+    } catch (e) {
+      toast.error((e as Error).message)
+    } finally {
+      setUploading(false)
+    }
+  }
 
   return (
     <div className="flex flex-col gap-5">
@@ -258,15 +282,57 @@ export function GenerateForm({
             <SliderField id="steps" label="Flow steps" hint="Acoustic detail vs. speed. Default 32." value={params.ode_steps} min={8} max={64} step={1} onChange={(v) => set("ode_steps", v)} />
           </div>
           <div className="flex flex-col gap-2">
-            <Label htmlFor="abc">Score (ABC notation, optional)</Label>
+            <div className="flex items-center justify-between gap-3">
+              <Label htmlFor="abc">Score (ABC notation, optional)</Label>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={!audioImport || busy || uploading}
+                title={
+                  !audioImport
+                    ? "Run Install.cmd again to add Import from audio (SheetSage2)."
+                    : busy && !transcribing
+                      ? "Wait for the song to finish."
+                      : "Transcribe a recording's melody into the score, for a cover in a new style."
+                }
+                onClick={() => fileInput.current?.click()}
+              >
+                {uploading ? <Loader2Icon className="animate-spin" /> : <FileAudioIcon />} Import from audio
+              </Button>
+              <input
+                ref={fileInput}
+                type="file"
+                accept="audio/*,video/*,.flac,.m4a,.ogg,.opus,.wav,.mp3"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0]
+                  e.target.value = "" // picking the same file again still fires
+                  if (file) importAudio(file)
+                }}
+              />
+            </div>
+            {transcribing && job && (
+              <div className="flex items-start gap-3 rounded-md border p-3">
+                <div className="min-w-0 flex-1">
+                  <JobProgress job={job} />
+                </div>
+                <Button variant="ghost" size="sm" onClick={() => api.cancel()}>
+                  Cancel
+                </Button>
+              </div>
+            )}
             <Textarea
               id="abc"
               rows={5}
-              className="font-mono text-xs"
-              placeholder="Paste or edit a score (e.g. one downloaded from a previous song) to control melody and chords."
+              className="max-h-96 font-mono text-xs"
+              placeholder="Paste or edit a score (e.g. one downloaded from a previous song) to control melody and chords, or import one from a recording."
               value={params.abc}
               onChange={(e) => set("abc", e.target.value)}
             />
+            <p className="text-xs text-muted-foreground">
+              Import from audio transcribes a recording's melody with SheetSage2 and switches Planning to Melody only, so YuE2
+              plays that tune in your style (with your lyrics, if any) and writes its own accompaniment.
+            </p>
           </div>
           <Button variant="outline" size="sm" className="self-start" onClick={() => {
               const { cfg_scale, temperature, top_p, top_k, repetition_penalty, ode_steps, abc } = DEFAULT_PARAMS

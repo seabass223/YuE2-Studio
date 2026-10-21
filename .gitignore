@@ -1,6 +1,8 @@
 .venv/
+.venv-sheetsage2/
 models/
 outputs/
+imports/
 logs/
 __pycache__/
 frontend/node_modules/

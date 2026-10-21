@@ -12,16 +12,19 @@ import contextlib
 import json
 import logging
 import os
+import shutil
 import sys
 import threading
 import time
+from pathlib import Path
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 import mcp_server
+import transcribe
 from engine import ROOT, Engine, ensure_mp3
 
 HOST, PORT = "127.0.0.1", int(os.environ.get("YUE2_PORT", "7862"))
@@ -104,6 +107,34 @@ async def generate(body: dict):
         raise HTTPException(400, str(exc))
     except RuntimeError as exc:
         raise HTTPException(409, str(exc))
+
+
+@app.post("/api/transcribe")
+async def transcribe_audio(request: Request, name: str = "audio"):
+    """Import from audio. The request body is the audio file itself; returns the transcription job,
+    whose result (on the WebSocket) holds the melody score."""
+    reason = transcribe.unavailable_reason()
+    if reason:
+        raise HTTPException(503, reason)
+    name = Path(name).name[:120] or "audio"
+    directory, path = transcribe.new_import(name)
+    try:
+        size = 0
+        with path.open("wb") as out:
+            async for chunk in request.stream():
+                size += len(chunk)
+                if size > transcribe.MAX_UPLOAD:
+                    raise HTTPException(413, f"{name} is over {transcribe.MAX_UPLOAD >> 20} MB")
+                out.write(chunk)
+        if not size:
+            raise HTTPException(400, f"{name} is empty")
+        try:
+            return engine.start_transcription(path, name).view()
+        except RuntimeError as exc:
+            raise HTTPException(409, str(exc))
+    except BaseException:
+        shutil.rmtree(directory, ignore_errors=True)
+        raise
 
 
 @app.post("/api/cancel")

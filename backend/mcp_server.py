@@ -164,7 +164,8 @@ class Jobs:
                         "message": job.error or "Cancelled before it started"}
         else:
             view = job.job.view()
-            view.pop("track", None)
+            for key in ("track", "kind", "result"):  # kind/result are the studio's Import from audio
+                view.pop(key, None)
             job.progress = max(job.progress, self._progress(view))
             out |= {"phase": PHASES.get(view["stage"], view["stage"].lower().replace(" ", "-")),
                     "progress": 1.0 if state == "completed" else round(min(job.progress, 0.99), 3),

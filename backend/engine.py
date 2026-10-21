@@ -31,6 +31,7 @@ from yue2.storage import MODEL_FILES, MODEL_LICENSES
 
 import fitted
 import timeline
+import transcribe
 import vocal_check
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -263,6 +264,8 @@ class Job:
     cancel: bool = False
     part: str | None = None  # "Section 2 of 3: chorus" while rendering sections separately
     source: str = "studio"  # "studio" (this app's page) or "mcp" (another app, which decides playback)
+    kind: str = "song"  # "song", or "transcribe" for Import from audio (result holds the score)
+    result: dict | None = None
     _stage: _Stage | None = None
 
     def view(self):
@@ -274,7 +277,8 @@ class Job:
         return {"id": self.id, "state": self.state, "stage": self.stage, "completed": self.completed,
                 "total": self.total, "unit": self.unit, "audio_seconds": round(self.audio_seconds, 1),
                 "max_seconds": self.params["max_seconds"], "elapsed": round(time.time() - self.started, 1),
-                "error": self.error, "track": self.track, "part": self.part, "source": self.source}
+                "error": self.error, "track": self.track, "part": self.part, "source": self.source,
+                "kind": self.kind, "result": self.result}
 
 
 def _float(params, key, default, lo, hi):
@@ -373,7 +377,7 @@ class Engine:
 
     def snapshot(self):
         return {"status": self.status, "detail": self.status_detail, "gpu": self.gpu(),
-                "job": self.job.view() if self.job else None}
+                "job": self.job.view() if self.job else None, "audio_import": transcribe.installed()}
 
     # Generation ------------------------------------------------------------
     def submit(self, raw):
@@ -387,10 +391,25 @@ class Engine:
             raise RuntimeError("Model is not ready yet")
         params = normalize_params(raw)
         with self.lock:
-            if self.busy():
-                raise RuntimeError("A song is already generating")
+            self._claim_slot()
             job = self.job = Job(id=uuid.uuid4().hex[:12], params=params, source=source)
         threading.Thread(target=self._run, args=(job,), name="yue2-job", daemon=True).start()
+        return job
+
+    def _claim_slot(self):
+        """One job at a time: a song and a transcription never share the GPU."""
+        if self.busy():
+            raise RuntimeError("Wait for the audio import to finish" if self.job.kind == "transcribe"
+                               else "A song is already generating")
+
+    def start_transcription(self, audio: Path, name: str) -> Job:
+        """Import from audio: transcribe `audio` (saved in its imports/ folder) to a melody score.
+        Doesn't need YuE2 loaded; YuE2's weights sit in system RAM between songs."""
+        with self.lock:
+            self._claim_slot()
+            job = self.job = Job(id=uuid.uuid4().hex[:12], params={"max_seconds": MAX_SECONDS, "name": name},
+                                 kind="transcribe", stage="Starting SheetSage2")
+        threading.Thread(target=self._transcribe, args=(job, audio), name="sheetsage2-job", daemon=True).start()
         return job
 
     def cancel(self):
@@ -599,6 +618,41 @@ class Engine:
                 "vocal_check": extra.get("vocal_check")}
         (directory / "meta.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
         return meta
+
+    # Import from audio -------------------------------------------------------
+    def _transcribe(self, job: Job, audio: Path):
+        job.state = "running"
+
+        def progress(event):
+            stage = event["stage"]
+            if stage == "loading":
+                job.stage = "Loading SheetSage2"
+            elif stage in ("encoding", "decoding"):
+                job.stage, job.completed, job.unit = "Transcribing melody", event["tokens"], "tokens"
+                job.part = f"Window {event['window']} of {event['windows']}" if event["windows"] > 1 else None
+            elif stage == "notation":
+                job.stage, job.completed, job.unit, job.part = "Writing score", 0, None, None
+
+        try:
+            result = transcribe.run(audio, audio.parent, max_seconds=MAX_SECONDS, on_progress=progress,
+                                    cancelled=lambda: job.cancel)
+            print(f"Transcribed {job.params['name']}: {result['duration']} s of audio in {result['seconds']} s "
+                  f"on {result['device']}, peak {result['peak_gpu_mib']} MiB", flush=True)
+            job.result = {"abc": result["abc"], "name": job.params["name"], "duration": result["duration"],
+                          "truncated": result["duration"] >= MAX_SECONDS - 0.5, "warnings": result["warnings"],
+                          "folder": audio.parent.name}
+            job.state, job.stage, job.part = "done", "Done", None
+        except InterruptedError:
+            job.state, job.stage, job.part = "cancelled", "Cancelled", None
+        except Exception as exc:
+            traceback.print_exc()
+            job.state, job.stage, job.part = "error", "Failed", None
+            job.error = f"Couldn't transcribe {job.params['name']}: {exc}"
+        finally:  # keep a finished import's score files, never the copy of the recording
+            if job.result is None:
+                shutil.rmtree(audio.parent, ignore_errors=True)
+            else:
+                audio.unlink(missing_ok=True)
 
     # Library ---------------------------------------------------------------
     def tracks(self):

@@ -17,6 +17,8 @@ export function JobProgress({ job }: { job: Pick<Job, "stage" | "completed" | "t
     detail = `${job.completed} / ${job.total} ${job.unit ?? ""}`
   } else if (job.stage === "Planning score") {
     detail = `${job.completed} score tokens`
+  } else if (job.stage === "Transcribing melody" && job.completed) {
+    detail = `${job.completed} ${job.unit}`
   }
   return (
     <div className="flex flex-col gap-2">

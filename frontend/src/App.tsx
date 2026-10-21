@@ -27,7 +27,7 @@ function loadForm(): GenerateParams {
 function StatusBadge({ snapshot, connected }: { snapshot: Snapshot | null; connected: boolean }) {
   if (!connected) return <Badge variant="destructive">Offline</Badge>
   if (!snapshot) return <Badge variant="secondary">Connecting</Badge>
-  if (snapshot.job?.state === "running") return <Badge>Generating</Badge>
+  if (snapshot.job?.state === "running") return <Badge>{snapshot.job.kind === "transcribe" ? "Transcribing" : "Generating"}</Badge>
   const labels = { starting: "Starting", downloading: "Downloading model", loading: "Loading model", ready: "Ready", error: "Error" }
   return <Badge variant={snapshot.status === "error" ? "destructive" : snapshot.status === "ready" ? "outline" : "secondary"}>{labels[snapshot.status]}</Badge>
 }
@@ -69,6 +69,25 @@ export default function App() {
     const firstSight = seenJob.current === null
     seenJob.current = key
     if (firstSight) return // finished before this page loaded
+    if (job.kind === "transcribe") {
+      const t = job.result
+      if (job.state === "done" && t) {
+        // A cover: the transcribed melody with planning set to melody-only, as upstream recommends,
+        // so YuE2 writes a new accompaniment. The length is the recording's (a cap with lyrics).
+        const seconds = Math.min(360, Math.max(10, Math.ceil(t.duration / 5) * 5))
+        setParams((p) => ({ ...p, abc: t.abc, cot: "melody", max_seconds: p.instrumental ? seconds : Math.max(p.max_seconds, seconds) }))
+        toast.success(`Melody of ${t.name} imported (${formatTime(t.duration)})`, {
+          description:
+            (t.truncated ? "Only the first 6:00 was transcribed. " : "") +
+            "Planning is now Melody only. Add a style (and lyrics that follow the melody's sections), then Generate.",
+        })
+      } else if (job.state === "error") {
+        toast.error(job.error ?? "Import from audio failed")
+      } else if (job.state === "cancelled") {
+        toast("Import from audio cancelled")
+      }
+      return
+    }
     if (job.source === "mcp") {
       // Requested by another app over MCP: that app decides whether and when to play it.
       if (job.state === "done" && job.track) {
@@ -91,6 +110,7 @@ export default function App() {
   }, [job])
 
   const running = job?.state === "running" || job?.state === "queued"
+  const transcribing = running && job?.kind === "transcribe" // shown and cancelled by the score field
   const ready = connected && snapshot?.status === "ready"
 
   const generate = async () => {
@@ -150,15 +170,15 @@ export default function App() {
             <CardTitle>New song</CardTitle>
           </CardHeader>
           <CardContent>
-            <GenerateForm params={params} onChange={setParams} />
+            <GenerateForm params={params} onChange={setParams} job={job} audioImport={snapshot?.audio_import ?? false} />
           </CardContent>
           <CardFooter className="justify-end gap-2">
-            {running ? (
+            {running && !transcribing ? (
               <Button variant="outline" size="lg" onClick={() => api.cancel()}>
                 <SquareIcon /> Cancel
               </Button>
             ) : (
-              <Button size="lg" disabled={!ready || submitting} onClick={generate}>
+              <Button size="lg" disabled={!ready || submitting || transcribing} onClick={generate}>
                 {submitting ? <Loader2Icon className="animate-spin" /> : <SparklesIcon />} Generate
               </Button>
             )}
@@ -179,7 +199,7 @@ export default function App() {
               )}
             </CardHeader>
             <CardContent className="flex flex-col gap-5">
-              {running && job && <JobProgress job={job} />}
+              {running && !transcribing && job && <JobProgress job={job} />}
               <Player track={current} autoPlay={autoPlay} />
             </CardContent>
           </Card>

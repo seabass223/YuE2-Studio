@@ -87,6 +87,21 @@ export interface Job {
   part: string | null
   /** "mcp" when another app requested it; the studio then leaves playback to that app. */
   source: "studio" | "mcp"
+  /** "transcribe": Import from audio, which shares the one job slot so it never overlaps a song. */
+  kind: "song" | "transcribe"
+  result: Transcription | null
+}
+
+/** Import from audio: SheetSage2's melody-only score for a recording. */
+export interface Transcription {
+  abc: string
+  name: string
+  duration: number
+  /** Only the first 6:00 (YuE2's longest song) was transcribed. */
+  truncated: boolean
+  warnings: string[]
+  /** Folder under imports\ with SheetSage2's score, MIDI and annotations. */
+  folder: string
 }
 
 export interface Snapshot {
@@ -94,6 +109,8 @@ export interface Snapshot {
   detail: string
   gpu: { name: string; total_gib: number; used_gib: number; last_peak_gib: number | null } | null
   job: Job | null
+  /** SheetSage2 is installed (Install.cmd adds it). */
+  audio_import: boolean
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -116,6 +133,13 @@ export const api = {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(params),
+    }),
+  /** Import from audio: uploads the file and starts transcribing it to a melody score. */
+  transcribe: (file: File) =>
+    request<Job>(`/api/transcribe?name=${encodeURIComponent(file.name)}`, {
+      method: "POST",
+      headers: { "Content-Type": file.type || "application/octet-stream" },
+      body: file,
     }),
   cancel: () => request("/api/cancel", { method: "POST" }),
   tracks: () => request<Track[]>("/api/tracks"),

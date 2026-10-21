@@ -4,12 +4,13 @@ A small local web UI for [YuE2](https://github.com/multimodal-art-projection/YuE
 
 ## Install
 
-Requires Python 3.12 (with the `py` launcher), Node.js, and an NVIDIA GPU.
+Requires Python 3.12 (with the `py` launcher), Node.js, and an NVIDIA GPU. [Import from audio](#covers) also needs FFmpeg on `PATH` (`winget install Gyan.FFmpeg`).
 
 Double-click **`Install.cmd`**. Double-clicking **`YuE2 Studio.exe`** works too; on first run it offers to install. The installer does the following:
 
 - Creates `.venv` with Python 3.12, PyTorch 2.10 (CUDA 12.8), `yue2-infer` 0.1.6 and Demucs.
 - Downloads the weights (~7.8 GB, plus ~410 MB for the [vocal check](#stray-vocals)) into `models\`.
+- For [Import from audio](#covers): creates `.venv-sheetsage2` with Python 3.11 and PyTorch 2.8 (CUDA 12.6), about 7 GB, and downloads SheetSage2 and its MERT-v2 encoder (~2.8 GB) into `models\`. If Python 3.11 is missing, the Python install manager (`py install 3.11`) adds it.
 - Builds the web app and compiles `YuE2 Studio.exe` (icon included) with the C# compiler that ships with Windows.
 - Adds **YuE2 Studio** to the Start menu.
 
@@ -39,6 +40,7 @@ Songs are saved to `outputs\<timestamp>-<id>\`. Each folder has `audio.flac` (48
 | Temperature / Top-p / Top-k / Repetition penalty | `semantic_sampling.*` | Song-token sampling. |
 | Flow steps | `GenerationConfig.ode_steps` | Acoustic flow-matching steps (default 32). |
 | Score (ABC) | `abc` | Supply or edit a score, e.g. one downloaded from an earlier song. |
+| Import from audio | `abc` + `cot="melody"` | Transcribes a recording's melody into Score with SheetSage2 for a [cover](#covers), and sets Planning to Melody only. |
 
 ## Instrumentals on a timeline
 
@@ -71,6 +73,24 @@ With a score in **Advanced → Score (ABC)**, the timeline is replaced by a **Le
 4. **Exact audio.** Song tokens are capped at the target and can't stop more than 1 s early. The file is then trimmed (with a 1.5 s fade if the cap cut it) or padded to the exact length.
 
 Each song folder also keeps the untouched model plan as `score-planned.abc`. `meta.json` records the plan and fit numbers.
+
+## Covers
+
+YuE2 can't listen to a recording, because its audio tokenizer isn't released. A cover therefore goes through a score, following upstream's [cover guide](https://github.com/multimodal-art-projection/YuE/blob/yue2-v0.1.6/docs/covers.md):
+
+1. **Advanced → Import from audio.** Pick a recording in any format FFmpeg reads, up to 200 MB. Only the first 6:00 is used, YuE2's longest song. [SheetSage2](https://huggingface.co/m-a-p/SheetSage2) transcribes the melody to ABC. It keeps the vocal and instrument melody lines and leaves out chord symbols.
+2. The score fills **Score (ABC)**. **Planning** switches to **Melody only**, so YuE2 keeps the tune but writes its own harmony and accompaniment for the new style. **Length** is set to the recording's.
+3. Add a style. For a sung cover, turn **Instrumental** off and write lyrics whose sections and syllables follow the melody. For an instrumental cover, leave it on: the melody moves to the instrument voice, as with [a pasted score](#instrumentals-from-a-pasted-score).
+4. Generate.
+
+Transcription mistakes carry into the cover, so read through the score, or listen to the source and compare, before a long render. A melody SheetSage2 hears as an instrument lands in the `Ins` voice and the `Vocal` voice is left as rests. For a sung cover of an instrumental recording, move those notes to `Vocal` by hand.
+
+How it runs:
+
+- SheetSage2 pins PyTorch 2.8 and Transformers 4.45, so it lives in its own `.venv-sheetsage2`. `backend/transcribe.py` runs `backend/sheetsage2_worker.py` there as a subprocess, offline, with the weights in `models\SheetSage2` and `models\MERT-v2-FullSong`.
+- A transcription takes the same job slot as a song, so the two never share the GPU. It can't start while a song is generating, and songs (including MCP requests) wait for it. YuE2's weights stay in system RAM in the meantime.
+- On the RTX 3060, a 40 s clip takes about 15 s (7 s of it loading), and a 6:00 song about 40 s. PyTorch peaks at 3.3 GiB of VRAM. Recordings over 5:00 are transcribed in two overlapping windows.
+- Each import keeps SheetSage2's output (`score.abc`, MIDI, beat, key and structure annotations) in `imports\<timestamp>-<id>\`. The uploaded copy of the recording is deleted.
 
 ## Stray vocals
 
@@ -166,3 +186,5 @@ Regenerate icons after editing `assets\icon.svg` with `npm run icons` in `fronte
 ## License
 
 YuE2 inference code is Apache 2.0. The weights are **CC BY-NC 4.0 with an additional creator permission**: individuals and content creators may use YuE2 and monetize the songs it generates, with no fees or royalties. Companies need a separate commercial license for the weights. Illegal, harmful, deceptive or unethical use is prohibited, and crediting YuE2 (e.g. #YuE2) is encouraged but optional. See the [upstream README](https://github.com/multimodal-art-projection/YuE).
+
+Import from audio uses SheetSage2 and its MERT-v2 encoder, whose weights are plain **CC BY-NC 4.0**, with no creator exception, so it is for non-commercial use. Covering someone else's song can also need the rights holder's permission.
