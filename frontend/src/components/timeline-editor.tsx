@@ -4,6 +4,7 @@ import { ArrowLeftIcon, ArrowRightIcon, CopyIcon, MinusIcon, PlusIcon, Trash2Ico
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { KeySelect } from "@/components/key-select"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Slider } from "@/components/ui/slider"
 import { Switch } from "@/components/ui/switch"
@@ -71,7 +72,17 @@ function fitSections(sections: Section[], target: number): Section[] {
   return sections.map((s, i) => ({ ...s, bars: bars[i] }))
 }
 
-export function TimelineEditor({ value, onChange }: { value: Timeline; onChange: (t: Timeline) => void }) {
+export function TimelineEditor({
+  value,
+  onChange,
+  songKey,
+  onSongKeyChange,
+}: {
+  value: Timeline
+  onChange: (t: Timeline) => void
+  songKey: string | null
+  onSongKeyChange: (key: string | null) => void
+}) {
   const [selectedId, setSelectedId] = useState<string | null>(value.sections[0]?.id ?? null)
   const [frozenTotal, setFrozenTotal] = useState<number | null>(null)
   const strip = useRef<HTMLDivElement>(null)
@@ -157,7 +168,7 @@ export function TimelineEditor({ value, onChange }: { value: Timeline; onChange:
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="grid grid-cols-[5.5rem_5.5rem_1fr] items-end gap-3">
+      <div className="grid grid-cols-[5.5rem_5.5rem_5.5rem_1fr] items-end gap-3">
         <div className="flex flex-col gap-2">
           <Label htmlFor="bpm">BPM</Label>
           <Input
@@ -184,6 +195,10 @@ export function TimelineEditor({ value, onChange }: { value: Timeline; onChange:
               <SelectItem value="3/4">3/4</SelectItem>
             </SelectContent>
           </Select>
+        </div>
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="key">Key</Label>
+          <KeySelect id="key" value={songKey} onChange={onSongKeyChange} />
         </div>
         <div className="flex flex-col gap-2">
           <div className="flex items-baseline justify-between">

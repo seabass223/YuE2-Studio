@@ -13,6 +13,10 @@ export const SECTION_LABELS = [
 ] as const
 export type SectionLabel = (typeof SECTION_LABELS)[number]
 export type Meter = "4/4" | "3/4"
+/** Every key the backend accepts (up to 7 sharps or flats), by pitch; enharmonic spellings side by side. */
+export const MAJOR_KEYS = ["C", "C#", "Db", "D", "Eb", "E", "F", "F#", "Gb", "G", "Ab", "A", "Bb", "B", "Cb"] as const
+export const MINOR_KEYS = ["Cm", "C#m", "Dm", "D#m", "Ebm", "Em", "Fm", "F#m", "Gm", "G#m", "Abm", "Am", "A#m", "Bbm", "Bm"] as const
+export const KEY_HINT = "Auto lets YuE2 choose; it nearly always picks E or A minor. Pick a key to vary the harmony."
 
 export interface Section {
   id: string
@@ -33,6 +37,8 @@ export interface Timeline {
 export const beatsPerBar = (meter: Meter) => (meter === "3/4" ? 3 : 4)
 export const timelineBars = (t: Timeline) => t.sections.reduce((sum, s) => sum + s.bars, 0)
 export const timelineSeconds = (t: Timeline) => (timelineBars(t) * beatsPerBar(t.meter) * 60) / t.bpm
+/** The key to send: a custom score sets its own key, and without planning there is no score to set it on. */
+export const effectiveKey = (p: GenerateParams) => (p.abc.trim() || p.cot === "off" ? null : p.key)
 export const newSectionId = () => Math.random().toString(36).slice(2, 10)
 
 export interface GenerateParams {
@@ -40,6 +46,8 @@ export interface GenerateParams {
   lyrics: string
   instrumental: boolean
   timeline: Timeline
+  /** The song's key ("A", "F#m", ...); null = YuE2 picks. Applies to every planned score. */
+  key: string | null
   cot: Cot
   seed: number | null
   max_seconds: number
@@ -61,11 +69,13 @@ export interface Track {
   truncated: boolean
   seconds_taken: number
   has_score: boolean
-  params: Omit<GenerateParams, "timeline"> & {
+  params: Omit<GenerateParams, "timeline" | "key"> & {
     seed: number
+    key?: string | null
     timeline?: {
       bpm: number
       meter: Meter
+      key?: string | null
       strict?: boolean
       sections: { label: SectionLabel; bars: number; description?: string }[]
     } | null

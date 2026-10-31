@@ -12,13 +12,18 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { JobProgress } from "@/components/job-progress"
 import { useBackend } from "@/hooks/use-backend"
-import { api, formatTime, newSectionId, type GenerateParams, type Snapshot, type Track } from "@/lib/api"
+import { api, effectiveKey, formatTime, newSectionId, type GenerateParams, type Snapshot, type Track } from "@/lib/api"
 
 const FORM_KEY = "yue2-form"
 
 function loadForm(): GenerateParams {
   try {
-    return { ...DEFAULT_PARAMS, ...JSON.parse(localStorage.getItem(FORM_KEY) ?? "{}") }
+    const saved = JSON.parse(localStorage.getItem(FORM_KEY) ?? "{}")
+    if (saved.timeline && "key" in saved.timeline) {
+      saved.key ??= saved.timeline.key // older forms kept the key on the timeline
+      delete saved.timeline.key
+    }
+    return { ...DEFAULT_PARAMS, ...saved }
   } catch {
     return DEFAULT_PARAMS
   }
@@ -120,7 +125,7 @@ export default function App() {
     }
     setSubmitting(true)
     try {
-      await api.generate({ ...params, abc: params.abc.trim() })
+      await api.generate({ ...params, abc: params.abc.trim(), key: effectiveKey(params) })
     } catch (e) {
       toast.error((e as Error).message)
     } finally {
@@ -222,8 +227,14 @@ export default function App() {
                     ...t.params,
                     instrumental: t.params.instrumental ?? !t.params.lyrics.trim(),
                     abc: t.params.abc ?? "",
+                    key: t.params.key ?? t.params.timeline?.key ?? null,
                     timeline: t.params.timeline
-                      ? { ...t.params.timeline, sections: t.params.timeline.sections.map((s) => ({ ...s, id: newSectionId() })) }
+                      ? {
+                          bpm: t.params.timeline.bpm,
+                          meter: t.params.timeline.meter,
+                          strict: t.params.timeline.strict,
+                          sections: t.params.timeline.sections.map((s) => ({ ...s, id: newSectionId() })),
+                        }
                       : params.timeline,
                   })
                   toast("Settings loaded into the form")

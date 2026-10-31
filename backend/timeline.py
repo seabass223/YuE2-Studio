@@ -1,7 +1,8 @@
 """Instrumentals laid out on a user timeline: BPM, meter and labeled sections of whole bars.
 
 YuE2 still writes the score with its own sampler; the timeline puts it on rails:
-  * the header (meter, unit length, tempo, voices) is written for it; it only picks the key,
+  * the header (meter, unit length, tempo, voices) is written for it; it picks the key unless the
+    timeline sets one,
   * every group starts with forced "V: Vocal"/"V: Ins" lines, and each section's label is
     forced at its first bar,
   * a Vocal line is cut off when it reaches the section's remaining bars (at most 4), and the Ins
@@ -21,6 +22,7 @@ import torch
 
 import fitted
 from fitted import _bars_in, clean_abc, convert_score, parse_abc
+from keys import parse_key
 from compile_score import SECTIONS
 from yue2.protocol import ABC_END, EOD, SongRequest, token_prefixes
 
@@ -31,6 +33,7 @@ METERS = {"4/4": (4, 4), "3/4": (3, 4)}
 MAX_SECONDS = 360  # 9000 song tokens
 # The header is written for the model except two values it picks itself: the note unit (it
 # chooses the grid that matches the rhythm it has in mind) and the key. None = model writes a line.
+# A timeline can set the key instead (see keys.py); Rails then forces it with the rest of the header.
 HEADER = ["X:1\nT:\nM:{meter}\nL:1/", None, "Q:1/4={bpm}\n"
           'V: Vocal clef=treble name="Vocal Melody" snm="Vocal"\n'
           'V: Ins clef=treble name="Ins Melody" snm="Inst."\nK:', None]
@@ -43,6 +46,7 @@ class Timeline:
     sections: list  # [(label, bars)]
     descriptions: list = dataclasses.field(default_factory=list)  # per-section style text ("" = none)
     strict: bool = True  # render each section separately so boundaries land exactly
+    key: str | None = None  # K: value such as "A" or "F#m"; None = YuE2 picks
 
     @classmethod
     def parse(cls, raw):
@@ -67,7 +71,7 @@ class Timeline:
             raise ValueError("Add at least one section")
         if all(label == "silence" for label, _ in sections):
             raise ValueError("The timeline needs at least one non-silent section")
-        timeline = cls(bpm, meter, sections, descriptions, bool(raw.get("strict", True)))
+        timeline = cls(bpm, meter, sections, descriptions, bool(raw.get("strict", True)), parse_key(raw.get("key")))
         if timeline.seconds > MAX_SECONDS:
             raise ValueError(f"The timeline is {timeline.seconds:.0f} s; the maximum is {MAX_SECONDS} s")
         return timeline
@@ -91,7 +95,7 @@ class Timeline:
 
     def to_dict(self):
         descriptions = self.descriptions or [""] * len(self.sections)
-        return {"bpm": self.bpm, "meter": self.meter, "strict": self.strict,
+        return {"bpm": self.bpm, "meter": self.meter, "key": self.key, "strict": self.strict,
                 "sections": [{"label": label, "bars": bars, "description": text}
                              for (label, bars), text in zip(self.sections, descriptions)]}
 
@@ -108,6 +112,8 @@ class Rails:
         self.index = 0
         self.state = "header"  # header -> group -> vocal -> vocal_done -> ins -> group ... -> done
         self.header = list(HEADER)
+        if timeline.key:  # forced with the rest of the header, so the model never picks
+            self.header[-2:] = [self.header[-2] + timeline.key + "\n"]
         self.line = ""
         self.target = 0
 

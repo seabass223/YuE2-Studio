@@ -190,6 +190,7 @@ below the table):
 | `max_seconds` | integer | `180` | 10–360. The cap for vocal songs (their length follows the lyrics); the exact length for instrumentals. |
 | `seed` | integer \| null | null | Reproducible output. null means random; the seed used is reported in the result. |
 | `cot` | `"full"` \| `"melody"` \| `"off"` | `"full"` | Score planning before audio: `full` plans melody and chords (best structure). Instrumentals cannot use `off`. |
+| `key` | string \| null | null | The song's key, major or minor (see 4.1.1a). Works for vocal songs and instrumentals, with or without a `timeline`. null or `"auto"` lets YuE2 choose. |
 | `timeline` | object \| null | null | Instrumentals only. An exact section layout that **overrides `max_seconds`** (see 4.1.1). |
 | `temperature` | number \| null | null (1.0) | 0.05–2.0. Sampling temperature. |
 | `cfg_scale` | number \| null | null (model default) | 0–5. Style adherence. Values above 1 cost a second branch. |
@@ -201,17 +202,20 @@ below the table):
 - `lyrics` is missing on a vocal song. Same exception as above.
 - `instrumental: true` together with `cot: "off"`.
 - An invalid `timeline` (4.1.1).
+- An unsupported `key`, a `key` with `cot: "off"`, or a `key` that disagrees with `timeline.key` (4.1.1a).
 
 #### 4.1.1 `timeline` object (instrumentals)
 
 ```json
-{ "bpm": 120, "meter": "4/4", "strict": true,
+{ "bpm": 120, "meter": "4/4", "key": "A", "strict": true,
   "sections": [ { "label": "intro", "bars": 4 }, { "label": "verse", "bars": 8, "description": "sparse piano" },
                 { "label": "chorus", "bars": 8 }, { "label": "outro", "bars": 4 } ] }
 ```
 
 - `bpm`: 40–240.
 - `meter`: `"4/4"` or `"3/4"`.
+- `key`: optional, the same as the top-level `key` (4.1.1a). Give either one; if you give both,
+  they must agree.
 - `strict`: default `true`. Renders each section separately so boundaries land exactly on the bar
   grid. Slower, but exact.
 - `sections`: one or more entries, at least one of them not `silence`.
@@ -220,6 +224,22 @@ below the table):
   - `bars` is 1–64.
   - `description` is optional style text for that section only, up to 300 characters.
 - Total length is bars × beats per bar × 60 ÷ bpm, and at most 360 s.
+
+#### 4.1.1a `key`
+
+The song's key, major or minor: `"A"`, `"Em"`, `"Bb"`, `"F#m"`, or spelled out (`"C major"`,
+`"d minor"`). Keys with up to 7 sharps or flats are accepted (`Cb` to `C#`, `Abm` to `A#m`).
+Omitted, null or `"auto"` lets YuE2 choose. Left to itself it almost always picks E or A minor
+over the same i–VI–VII chords, whatever the style says, so set a key to vary songs.
+
+- The key is written on the planned score's `K:` line, so the model never picks it; it still writes
+  the melody and chords. It works on every path that plans a score: vocal songs (`cot` `full` or
+  `melody`), plain-length instrumentals, and timeline instrumentals. With `cot: "off"` there is no
+  score, so a key is rejected.
+- A key with a user-supplied score (the studio's `abc` field; not an MCP argument) is rejected:
+  the score's own `K:` line sets its key.
+- The result's `data.track.params.key` echoes the key used (null for auto), and so does
+  `params.timeline.key` for timelines.
 
 #### 4.1.2 Results
 
@@ -239,8 +259,8 @@ below the table):
     "statusTool": "job_status", "resultTool": "job_result", "cancelTool": "job_cancel", "pollIntervalMs": 1000, "ttlMs": 3600000 } }
 ```
 
-No job exists yet. Render the View: it shows a form, calls `generate_song` itself when the user
-submits, and then sends you `micro-ui-jobs/notifications/started` with the JobHandle.
+No job exists yet. Render the View: it shows a form (style, instrumental, lyrics, length and key,
+prefilled from `draft`), calls `generate_song` itself when the user submits, and then sends you `micro-ui-jobs/notifications/started` with the JobHandle.
 
 **Error:**
 

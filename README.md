@@ -32,7 +32,8 @@ Songs are saved to `outputs\<timestamp>-<id>\`. Each folder has `audio.flac` (48
 | Lyrics | `lyrics` | Use section tags like `[Verse]`, `[Chorus]`, `[Bridge]`, `[Outro]`. |
 | Instrumental | (see below) | No lyrics. Lay the song out on the timeline. |
 | Fix stray vocals | (see [below](#stray-vocals)) | Instrumentals: listen for singing and re-render the part that has it. On by default. |
-| Timeline | (see below) | BPM, meter (4/4 or 3/4), and labeled sections in whole bars. Sets the exact length. |
+| Timeline | (see below) | BPM, meter (4/4 or 3/4), key, and labeled sections in whole bars. Sets the exact length. |
+| Key | (see [below](#key)) | Auto, or a major/minor key for the planned score. In the timeline for instrumentals, next to Planning for songs with lyrics. |
 | Max length | `semantic_sampling.max_tokens` (25 tokens/s) | Songs with lyrics: length follows the lyrics, and this only caps it (max 6:00). |
 | Planning | `cot` | `full`: melody + chords score first (default). `melody`: melody only. `off`: no score. |
 | Seed | `seed` | Leave blank for random. |
@@ -44,11 +45,11 @@ Songs are saved to `outputs\<timestamp>-<id>\`. Each folder has `audio.flac` (48
 
 ## Instrumentals on a timeline
 
-In Instrumental mode you set the BPM, the meter, and a row of sections (intro, verse, pre-chorus, chorus, bridge, interlude, instrumental, outro, silence), each a whole number of bars. You can drag a section's right edge, use −/+ or type the bar count, move sections, duplicate or delete them, or drag **Length** to rescale all sections to fit. The length is always exactly bars × beats ÷ BPM.
+In Instrumental mode you set the BPM, the meter, the key, and a row of sections (intro, verse, pre-chorus, chorus, bridge, interlude, instrumental, outro, silence), each a whole number of bars. You can drag a section's right edge, use −/+ or type the bar count, move sections, duplicate or delete them, or drag **Length** to rescale all sections to fit. The length is always exactly bars × beats ÷ BPM.
 
 YuE2 still composes the score; `backend/timeline.py` keeps it on the timeline:
 
-- **Header:** it is written from your BPM and meter. YuE2 picks the key and note unit.
+- **Header:** it is written from your BPM, meter and [key](#key). YuE2 picks the note unit, and the key too when **Key** is Auto.
 - **Sections:** each label is placed at its first bar. Lines of music are cut at section boundaries, and the instrument line is held to the vocal line's bar count. Lines may only start with music (no meter or key changes).
 - **Silence:** silence sections are written as full-bar rests without chords. Because YuE2 renders rests as quiet rather than silent, those bars are also muted in the audio.
 - **Repairs:** ties into rests are removed. If a planned score still fails validation, it is re-planned with the next seed (up to 3 times).
@@ -63,11 +64,21 @@ Then the melody moves to the instrument voice. Your labels shape the composition
 
 The whole token stream is then turned into audio in one pass, so there are no joins in the audio. `meta.json` has a per-section report. Turn the option off for a plain single-pass render. The audio is exactly the timeline's length either way.
 
+## Key
+
+Left to itself, YuE2 almost always plans in E or A minor over the same i–VI–VII chords (Em–C–D, Am–F–G), whatever the style asks for, so songs end up sounding alike. **Key** sets the planned score's `K:` line instead (`backend/keys.py`); YuE2 still writes the melody and chords, in that key. Auto leaves the choice to YuE2.
+
+- **Timeline instrumentals:** the key is forced with the rest of the header.
+- **Songs with lyrics, and instrumentals fitted to a length:** YuE2 writes its header as usual and the key is filled in once it reaches `K:`. For songs with lyrics this plan is then given to YuE2 as the song's score, the same as a pasted one.
+- **Not with a pasted score** (its `K:` line sets the key) or with Planning off (there is no score); the picker is disabled then.
+
+Over the API and MCP, `key` takes `A`, `Em`, `Bb`, `F#m`, `C major`, `d minor` and so on, up to 7 sharps or flats. A timeline's own `key` works too; if both are given they must agree.
+
 ## Instrumentals from a pasted score
 
 With a score in **Advanced → Score (ABC)**, the timeline is replaced by a **Length** slider. `backend/fitted.py` fits the score to that length. Without a score or timeline (API only), it also steers YuE2's own free-running plan to the length:
 
-1. **Planning.** YuE2 writes the score with its own sampler. Once it has chosen tempo and meter, the target length becomes a bar count. The score can't end early, an `% outro` section is forced near the end (no `% silence` sections, no new sections after the outro), and the score closes at the target bar.
+1. **Planning.** YuE2 writes the score with its own sampler (in the requested [key](#key), if any). Once it has chosen tempo and meter, the target length becomes a bar count. The score can't end early, an `% outro` section is forced near the end (no `% silence` sections, no new sections after the outro), and the score closes at the target bar.
 2. **Tempo fit.** The `Q:` tempo is adjusted (at most ±15%, usually a few %) so the score's nominal length equals the target.
 3. **Instrumental conversion.** This follows YuE2's official instrumental recipe: the planned melody moves from the Vocal voice to the Ins voice (vendored MIT tools in `backend/vendor/yue2_instrumental`). The song is rendered with section tags instead of lyrics (sung sections as `[Instrumental]`), and the style gets "Instrumental, …, no vocals, no singing, no choir, no spoken words".
 4. **Exact audio.** Song tokens are capped at the target and can't stop more than 1 s early. The file is then trimmed (with a 1.5 s fade if the cap cut it) or padded to the exact length.
@@ -145,7 +156,7 @@ The backend also stays up for 5 minutes after the last MCP request, and for as l
 
 | Tool | Purpose |
 |---|---|
-| `generate_song` | `style`, `lyrics`, `instrumental`, `max_seconds`, `seed`, `cot`, `timeline`, `temperature`, `cfg_scale`, `vocal_check`. Returns a job handle. With no style, MCP Apps hosts get a form instead. |
+| `generate_song` | `style`, `lyrics`, `instrumental`, `max_seconds`, `seed`, `cot`, `key`, `timeline`, `temperature`, `cfg_scale`, `vocal_check`. Returns a job handle. With no style, MCP Apps hosts get a form instead. |
 | `job_status` | Status and 0–1 progress. Pass `waitMs` (up to 30000) to long-poll with progress notifications. |
 | `job_result` | Artifact descriptors and resource links once the job has `completed`. Pass `inline: true` to also embed the MP3. |
 | `job_cancel` | Stops a queued or running job. |

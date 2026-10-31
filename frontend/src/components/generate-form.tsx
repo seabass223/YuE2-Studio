@@ -11,14 +11,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Slider } from "@/components/ui/slider"
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
+import { KeySelect } from "@/components/key-select"
 import { DEFAULT_TIMELINE, TimelineEditor } from "@/components/timeline-editor"
-import { api, formatTime, type Cot, type GenerateParams, type Job } from "@/lib/api"
+import { api, formatTime, KEY_HINT, type Cot, type GenerateParams, type Job } from "@/lib/api"
 
 export const DEFAULT_PARAMS: GenerateParams = {
   style: "",
   lyrics: "",
   instrumental: true,
   timeline: DEFAULT_TIMELINE,
+  key: null,
   cot: "full",
   seed: null,
   max_seconds: 180,
@@ -94,6 +96,11 @@ export function GenerateForm({
   const set = <K extends keyof GenerateParams>(key: K, value: GenerateParams[K]) => onChange({ ...params, [key]: value })
   // The timeline always plans with chords: they keep YuE2's audio on the beat grid (melody-only drifts).
   const timelineActive = params.instrumental && !params.abc.trim()
+  const keyBlocked = params.abc.trim()
+    ? "The score from Advanced sets its own key (its K: line)."
+    : params.cot === "off"
+      ? "The key is set on the planned score, and planning is off."
+      : null
   const busy = job?.state === "queued" || job?.state === "running"
   const transcribing = busy && job?.kind === "transcribe"
 
@@ -164,12 +171,23 @@ export function GenerateForm({
         )}
       </div>
 
-      {params.instrumental ? (
-        params.abc.trim() ? (
+      {timelineActive ? (
+        <TimelineEditor
+          value={params.timeline}
+          onChange={(t) => set("timeline", t)}
+          songKey={params.key}
+          onSongKeyChange={(k) => set("key", k)}
+        />
+      ) : (
+        <div className="grid grid-cols-[1fr_5.5rem] items-start gap-4">
           <SliderField
             id="max-seconds"
-            label="Length"
-            hint="Using the score from Advanced instead of the timeline (clear it to use the timeline). Its tempo is fitted to this length."
+            label={params.instrumental ? "Length" : "Max length"}
+            hint={
+              params.instrumental
+                ? "Using the score from Advanced instead of the timeline (clear it to use the timeline). Its tempo is fitted to this length."
+                : "Song length follows the lyrics; generation stops here if it runs longer. Shorter caps use less VRAM."
+            }
             value={params.max_seconds}
             display={formatTime(params.max_seconds)}
             min={10}
@@ -177,21 +195,17 @@ export function GenerateForm({
             step={5}
             onChange={(v) => set("max_seconds", v)}
           />
-        ) : (
-          <TimelineEditor value={params.timeline} onChange={(t) => set("timeline", t)} />
-        )
-      ) : (
-        <SliderField
-          id="max-seconds"
-          label="Max length"
-          hint="Song length follows the lyrics; generation stops here if it runs longer. Shorter caps use less VRAM."
-          value={params.max_seconds}
-          display={formatTime(params.max_seconds)}
-          min={10}
-          max={360}
-          step={5}
-          onChange={(v) => set("max_seconds", v)}
-        />
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="song-key">Key</Label>
+            <KeySelect
+              id="song-key"
+              value={keyBlocked ? null : params.key}
+              onChange={(k) => set("key", k)}
+              disabled={Boolean(keyBlocked)}
+              title={keyBlocked ?? KEY_HINT}
+            />
+          </div>
+        </div>
       )}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

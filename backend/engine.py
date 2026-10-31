@@ -30,6 +30,7 @@ from yue2.protocol import SongRequest
 from yue2.storage import MODEL_FILES, MODEL_LICENSES
 
 import fitted
+import keys
 import timeline
 import transcribe
 import vocal_check
@@ -310,15 +311,24 @@ def normalize_params(raw):
     if abc and cot == "off":
         raise ValueError("A custom score needs planning mode Full or Melody")
     cfg = raw.get("cfg_scale")
+    key = keys.parse_key(raw.get("key"))
+    if key and abc:
+        raise ValueError("A custom score sets its own key on its K: line; set Key to Auto or edit the score")
+    if key and cot == "off":
+        raise ValueError("Key needs planning mode Full or Melody (it is set on the planned score)")
     layout = None
     if instrumental and not abc and raw.get("timeline"):
         layout = timeline.Timeline.parse(raw["timeline"])
         # Chord symbols in every bar are what keep YuE2's audio on the timeline's beat grid; with
         # melody-only planning it drifts ~1 bar early and the last section ends up as padding.
         cot = "full"
+        if key and layout.key and key != layout.key:
+            raise ValueError(f"key {key} and timeline.key {layout.key} disagree; give one of them")
+        layout.key = layout.key or key
+        key = layout.key
     return {
         "style": style, "lyrics": lyrics, "instrumental": instrumental, "cot": cot, "seed": seed, "abc": abc,
-        "timeline": layout.to_dict() if layout else None,
+        "key": key, "timeline": layout.to_dict() if layout else None,
         "vocal_check": instrumental and bool(raw.get("vocal_check", True)),
         "cfg_scale": None if cfg in (None, "") else _float(raw, "cfg_scale", 1.0, 0.0, 5.0),
         "max_seconds": round(layout.seconds, 2) if layout else int(_float(raw, "max_seconds", 240, 10, MAX_SECONDS)),
@@ -432,9 +442,15 @@ class Engine:
             if p["instrumental"]:
                 song, extra = self._instrumental(job, pipe, p, semantic)
             else:
-                song, extra = pipe(style=p["style"], lyrics=p["lyrics"], cot=p["cot"], seed=p["seed"],
-                                   abc=p["abc"], cfg_scale=p["cfg_scale"], semantic_sampling=semantic,
-                                   cancelled=lambda: job.cancel), {}
+                abc, extra = p["abc"], {}
+                if p.get("key"):  # YuE2's own plan with the key set, then given to it as the score
+                    request = SongRequest(style=p["style"], lyrics=p["lyrics"], cot=p["cot"], seed=p["seed"],
+                                          cfg_scale=p["cfg_scale"])
+                    abc, plan_info = keys.plan_score(pipe, request, p["key"], cancelled=lambda: job.cancel)
+                    extra = {"plan": plan_info}
+                song = pipe(style=p["style"], lyrics=p["lyrics"], cot=p["cot"], seed=p["seed"],
+                            abc=abc, cfg_scale=p["cfg_scale"], semantic_sampling=semantic,
+                            cancelled=lambda: job.cancel)
             job._stage = None
             job.stage = "Saving"
             job.track = self._save(job, song, extra)
@@ -490,7 +506,7 @@ class Engine:
             if raw is None:
                 request = SongRequest(style=style, lyrics=fitted.planning_sections(target), cot=p["cot"],
                                       seed=p["seed"])
-                raw, plan_info = fitted.plan_score(pipe, request, target, cancelled=cancelled)
+                raw, plan_info = fitted.plan_score(pipe, request, target, key=p.get("key"), cancelled=cancelled)
                 planned_quarters = plan_info["planned_quarters"]
             abc, fit_info, has_chords = fitted.fit_score(raw, target, keep_chords=p["cot"] == "full",
                                                          planned_quarters=planned_quarters)

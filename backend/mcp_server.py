@@ -304,9 +304,16 @@ def build(engine: Engine, *, base_url: str) -> tuple[MCPServer, Jobs]:
         cot: Annotated[Literal["full", "melody", "off"], Field(description=(
             "Score planning before audio: 'full' (melody and chords, best structure), 'melody', or 'off'."))] = "full",
         timeline: Annotated[dict | None, Field(description=(
-            "Instrumental only. Exact section layout: {bpm: 40-240, meter: '4/4'|'3/4', strict: bool, "
+            "Instrumental only. Exact section layout: {bpm: 40-240, meter: '4/4'|'3/4', key?: str, strict: bool, "
             "sections: [{label: intro|verse|pre-chorus|chorus|bridge|interlude|instrumental|outro|silence, "
-            "bars: 1-64, description?: str}]}. Overrides max_seconds."))] = None,
+            "bars: 1-64, description?: str}]}. Overrides max_seconds. timeline.key works like the top-level "
+            "key; give either (if both are given they must agree)."))] = None,
+        key: Annotated[str | None, Field(description=(
+            "Musical key of the song, major or minor: 'A', 'Em', 'Bb', 'F#m', 'C major', 'D minor' (up to 7 "
+            "sharps or flats). Omit or 'auto' to let YuE2 choose; it almost always picks E or A minor over the "
+            "same i-VI-VII chords whatever the style says, so set a key to vary the harmony between songs. "
+            "Works for vocal songs and instrumentals (with or without a timeline); needs cot 'full' or "
+            "'melody'."))] = None,
         temperature: Annotated[float | None, Field(ge=0.05, le=2.0, description="Sampling temperature (default 1.0).")] = None,
         cfg_scale: Annotated[float | None, Field(ge=0, le=5, description="Style adherence (default: model's own).")] = None,
         vocal_check: Annotated[bool, Field(description=(
@@ -314,7 +321,8 @@ def build(engine: Engine, *, base_url: str) -> tuple[MCPServer, Jobs]:
             "more times."))] = True,
     ) -> CallToolResult:
         raw = {"style": style or "", "lyrics": lyrics or "", "instrumental": instrumental, "max_seconds": max_seconds,
-               "seed": seed, "cot": cot, "timeline": timeline, "temperature": temperature, "cfg_scale": cfg_scale,
+               "seed": seed, "cot": cot, "key": key, "timeline": timeline, "temperature": temperature,
+               "cfg_scale": cfg_scale,
                "vocal_check": vocal_check}
         missing = [name for name, value in (("style", style), ("lyrics", instrumental or lyrics)) if not
                    (value.strip() if isinstance(value, str) else value)]

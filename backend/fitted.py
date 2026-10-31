@@ -28,6 +28,7 @@ from abc_tools import parse_abc  # noqa: E402
 from compile_score import SECTIONS  # noqa: E402
 from instrumentalize import convert_score  # noqa: E402
 
+from keys import KeyHeader  # noqa: E402
 from yue2.protocol import ABC_END, EOD, SongRequest, token_prefixes  # noqa: E402
 
 ABC_BUDGET = 8192  # tokens; ~15-20 per bar, the stock 4096 can truncate long plans
@@ -195,8 +196,9 @@ def _label_token_ids(tokenizer, label):
 
 
 @torch.inference_mode()
-def plan_score(pipe, request: SongRequest, target_seconds, *, cancelled=None):
-    """Sample an ABC score whose length is steered to target_seconds. Returns (abc, info)."""
+def plan_score(pipe, request: SongRequest, target_seconds, *, key=None, cancelled=None):
+    """Sample an ABC score whose length is steered to target_seconds, in `key` if one is given
+    (None = the model picks). Returns (abc, info)."""
     import yue2.cuda_graph as cuda_graph
     from yue2.sampling import distribution
 
@@ -210,6 +212,7 @@ def plan_score(pipe, request: SongRequest, target_seconds, *, cancelled=None):
     section_ids = _label_token_ids(tokenizer, "%").to(pipe.device)
     generator = torch.Generator(device=pipe.device).manual_seed(request.seed)
     tracker = ScoreTracker(target_seconds)
+    header = KeyHeader(key)
     ids, forced, forced_count = [], [], 0
     graph = cuda_graph.GraphAR(model, [prefix], sampling.max_tokens)
     with pipe._status("Planning score", total=int(target_seconds), unit="s") as stage:
@@ -249,6 +252,12 @@ def plan_score(pipe, request: SongRequest, target_seconds, *, cancelled=None):
                             logits[..., outro_ids] = -torch.inf
                     scores = distribution(logits, sampling, ids, step, "abc")
                     token = int(torch.multinomial(scores.softmax(-1), 1, generator=generator).item())
+                    if token != ABC_END and not header.done:
+                        text = tokenizer._enc.decode_single_token_bytes(token).decode("utf-8", "replace")
+                        kept, key_text = header.rewrite(text)
+                        if key_text:  # the model wrote "K:"; the key is forced
+                            forced = tokenizer.encode(kept + key_text)
+                            token = forced.pop(0)
                 if token == ABC_END:
                     break
                 ids.append(token)
@@ -261,7 +270,7 @@ def plan_score(pipe, request: SongRequest, target_seconds, *, cancelled=None):
             graph.close()
     info = {"model_bpm": tracker.bpm, "meter": "%d/%d" % tracker.meter, "target_bars": tracker.target_bars,
             "planned_bars": tracker.bars, "planned_quarters": tracker.quarters, "score_tokens": len(ids),
-            "forced_outro": bool(forced_count)}
+            "forced_outro": bool(forced_count), "key": key}
     return tokenizer.decode(ids), info
 
 

@@ -11,7 +11,7 @@ import { Progress } from "@/components/ui/progress"
 import { Slider } from "@/components/ui/slider"
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
-import { formatLength, formatTime, type Job, type Track } from "@/lib/api"
+import { formatLength, formatTime, KEY_HINT, MAJOR_KEYS, MINOR_KEYS, type Job, type Track } from "@/lib/api"
 import type { Artifact, InputNeeded } from "./profile"
 import { useJob } from "./use-job"
 
@@ -60,13 +60,24 @@ function QuickForm({ input, onSubmit }: { input: InputNeeded; onSubmit: (args: R
   const [lyrics, setLyrics] = useState(String(draft.lyrics ?? ""))
   const [instrumental, setInstrumental] = useState(Boolean(draft.instrumental))
   const [seconds, setSeconds] = useState(Number(draft.max_seconds ?? 120))
+  const draftTimeline = draft.timeline && typeof draft.timeline === "object" ? (draft.timeline as Record<string, unknown>) : null
+  const [key, setKey] = useState(String(draft.key ?? draftTimeline?.key ?? ""))
   const [busy, setBusy] = useState(false)
   const ready = style.trim() && (instrumental || lyrics.trim())
 
   const submit = () => {
     if (!ready || busy) return
     setBusy(true)
-    onSubmit({ ...draft, style, lyrics: instrumental ? "" : lyrics, instrumental, max_seconds: seconds })
+    onSubmit({
+      ...draft,
+      style,
+      lyrics: instrumental ? "" : lyrics,
+      instrumental,
+      max_seconds: seconds,
+      key: key || null,
+      // The key picked here replaces a draft timeline's own key, so the two can't disagree.
+      ...(draftTimeline && { timeline: { ...draftTimeline, key: undefined } }),
+    })
   }
 
   // Not a <form>: hosts may sandbox the View without allow-forms, which silently blocks submit events.
@@ -92,6 +103,33 @@ function QuickForm({ input, onSubmit }: { input: InputNeeded; onSubmit: (args: R
           <span className="tabular-nums text-muted-foreground">{formatTime(seconds)}</span>
         </div>
         <Slider min={10} max={360} step={10} value={[seconds]} onValueChange={([v]) => setSeconds(v)} />
+      </div>
+      <div className="flex items-center justify-between gap-3">
+        <Label htmlFor="key">Key</Label>
+        {/* Native select: its list opens outside the host's iframe instead of being clipped by it. */}
+        <select
+          id="key"
+          value={key}
+          onChange={(e) => setKey(e.target.value)}
+          title={KEY_HINT}
+          className="h-8 w-28 rounded-lg border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30 [&_option]:bg-background [&_optgroup]:bg-background"
+        >
+          <option value="">Auto</option>
+          <optgroup label="Major">
+            {MAJOR_KEYS.map((k) => (
+              <option key={k} value={k}>
+                {k}
+              </option>
+            ))}
+          </optgroup>
+          <optgroup label="Minor">
+            {MINOR_KEYS.map((k) => (
+              <option key={k} value={k}>
+                {k}
+              </option>
+            ))}
+          </optgroup>
+        </select>
       </div>
       <Button type="button" disabled={!ready || busy} onClick={submit}>
         {busy ? <Loader2Icon className="animate-spin" /> : <SparklesIcon />} Generate
