@@ -3,130 +3,458 @@
 @import "shadcn/tailwind.css";
 
 @custom-variant dark (&:is(.dark *));
+/* Below this width the prompt panel can't fit labels beside the knobs: they move above the value boxes. */
+@custom-variant param-tight (@container prompt-panel (max-width: 1270px));
+
+/* Electric cyan studio theme (dark only): StableSFX Studio's skin with the amber swapped out. */
+:root {
+  --radius: 0.5rem;
+  --background: #15191a;
+  --foreground: #d4eff2;
+  --card: #0d1618;
+  --card-foreground: #d4eff2;
+  --popover: #10191c;
+  --popover-foreground: #d4eff2;
+  --primary: #1fccff;
+  --primary-foreground: #03161b;
+  --secondary: #142124;
+  --secondary-foreground: #c4e6ea;
+  --muted: #121e21;
+  --muted-foreground: #769ca3;
+  --accent: #18272c;
+  --accent-foreground: #a8f2ff;
+  --destructive: #e5484d;
+  --border: #1c2e33;
+  --input: #20353a;
+  --ring: #33d5ff;
+  --success: #3fd47a;
+  --warning: #ffb547;
+  --amber: #ffb547;
+  --panel: #0b1214;
+  --panel-raised: #111c1e;
+  --glow: rgb(31 204 255 / 0.45);
+  --wave: #1fccff;
+  --wave-progress: #66e8ff;
+  --chart-1: #1fccff;
+  --chart-2: #ffb547;
+  --chart-3: #3fd47a;
+  --chart-4: #e5484d;
+  --chart-5: #769ca3;
+  --sidebar: #0a1012;
+  --sidebar-foreground: #c4e6ea;
+  --sidebar-primary: #1fccff;
+  --sidebar-primary-foreground: #03161b;
+  --sidebar-accent: #142124;
+  --sidebar-accent-foreground: #a8f2ff;
+  --sidebar-border: #17262a;
+  --sidebar-ring: #33d5ff;
+}
 
 @theme inline {
-    --font-heading: var(--font-sans);
-    --font-sans: 'Geist Variable', sans-serif;
-    --color-sidebar-ring: var(--sidebar-ring);
-    --color-sidebar-border: var(--sidebar-border);
-    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-    --color-sidebar-accent: var(--sidebar-accent);
-    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-    --color-sidebar-primary: var(--sidebar-primary);
-    --color-sidebar-foreground: var(--sidebar-foreground);
-    --color-sidebar: var(--sidebar);
-    --color-chart-5: var(--chart-5);
-    --color-chart-4: var(--chart-4);
-    --color-chart-3: var(--chart-3);
-    --color-chart-2: var(--chart-2);
-    --color-chart-1: var(--chart-1);
-    --color-ring: var(--ring);
-    --color-input: var(--input);
-    --color-border: var(--border);
-    --color-destructive: var(--destructive);
-    --color-accent-foreground: var(--accent-foreground);
-    --color-accent: var(--accent);
-    --color-muted-foreground: var(--muted-foreground);
-    --color-muted: var(--muted);
-    --color-secondary-foreground: var(--secondary-foreground);
-    --color-secondary: var(--secondary);
-    --color-primary-foreground: var(--primary-foreground);
-    --color-primary: var(--primary);
-    --color-popover-foreground: var(--popover-foreground);
-    --color-popover: var(--popover);
-    --color-card-foreground: var(--card-foreground);
-    --color-card: var(--card);
-    --color-foreground: var(--foreground);
-    --color-background: var(--background);
-    --radius-sm: calc(var(--radius) * 0.6);
-    --radius-md: calc(var(--radius) * 0.8);
-    --radius-lg: var(--radius);
-    --radius-xl: calc(var(--radius) * 1.4);
-    --radius-2xl: calc(var(--radius) * 1.8);
-    --radius-3xl: calc(var(--radius) * 2.2);
-    --radius-4xl: calc(var(--radius) * 2.6);
-}
-
-:root {
-    --background: oklch(1 0 0);
-    --foreground: oklch(0.145 0 0);
-    --card: oklch(1 0 0);
-    --card-foreground: oklch(0.145 0 0);
-    --popover: oklch(1 0 0);
-    --popover-foreground: oklch(0.145 0 0);
-    --primary: oklch(0.205 0 0);
-    --primary-foreground: oklch(0.985 0 0);
-    --secondary: oklch(0.97 0 0);
-    --secondary-foreground: oklch(0.205 0 0);
-    --muted: oklch(0.97 0 0);
-    --muted-foreground: oklch(0.556 0 0);
-    --accent: oklch(0.97 0 0);
-    --accent-foreground: oklch(0.205 0 0);
-    --destructive: oklch(0.577 0.245 27.325);
-    --border: oklch(0.922 0 0);
-    --input: oklch(0.922 0 0);
-    --ring: oklch(0.708 0 0);
-    --chart-1: oklch(0.87 0 0);
-    --chart-2: oklch(0.556 0 0);
-    --chart-3: oklch(0.439 0 0);
-    --chart-4: oklch(0.371 0 0);
-    --chart-5: oklch(0.269 0 0);
-    --radius: 0.625rem;
-    --sidebar: oklch(0.985 0 0);
-    --sidebar-foreground: oklch(0.145 0 0);
-    --sidebar-primary: oklch(0.205 0 0);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.97 0 0);
-    --sidebar-accent-foreground: oklch(0.205 0 0);
-    --sidebar-border: oklch(0.922 0 0);
-    --sidebar-ring: oklch(0.708 0 0);
-}
-
-.dark {
-    --background: oklch(0.145 0 0);
-    --foreground: oklch(0.985 0 0);
-    --card: oklch(0.205 0 0);
-    --card-foreground: oklch(0.985 0 0);
-    --popover: oklch(0.205 0 0);
-    --popover-foreground: oklch(0.985 0 0);
-    --primary: oklch(0.922 0 0);
-    --primary-foreground: oklch(0.205 0 0);
-    --secondary: oklch(0.269 0 0);
-    --secondary-foreground: oklch(0.985 0 0);
-    --muted: oklch(0.269 0 0);
-    --muted-foreground: oklch(0.708 0 0);
-    --accent: oklch(0.269 0 0);
-    --accent-foreground: oklch(0.985 0 0);
-    --destructive: oklch(0.704 0.191 22.216);
-    --border: oklch(1 0 0 / 10%);
-    --input: oklch(1 0 0 / 15%);
-    --ring: oklch(0.556 0 0);
-    --chart-1: oklch(0.87 0 0);
-    --chart-2: oklch(0.556 0 0);
-    --chart-3: oklch(0.439 0 0);
-    --chart-4: oklch(0.371 0 0);
-    --chart-5: oklch(0.269 0 0);
-    --sidebar: oklch(0.205 0 0);
-    --sidebar-foreground: oklch(0.985 0 0);
-    --sidebar-primary: oklch(0.488 0.243 264.376);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.269 0 0);
-    --sidebar-accent-foreground: oklch(0.985 0 0);
-    --sidebar-border: oklch(1 0 0 / 10%);
-    --sidebar-ring: oklch(0.556 0 0);
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Michroma", "Inter Variable", sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, monospace;
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-amber: var(--amber);
+  --color-panel: var(--panel);
+  --color-panel-raised: var(--panel-raised);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
 }
 
 @layer base {
   * {
     @apply border-border outline-ring/50;
-    }
+  }
   body {
-    @apply bg-background text-foreground;
-    }
-  button:not(:disabled), [role="button"]:not(:disabled) {
+    @apply bg-background text-foreground antialiased;
+    font-family: var(--font-sans);
+    background:
+      radial-gradient(1200px 600px at 15% -10%, rgb(31 204 255 / 0.06), transparent 60%),
+      radial-gradient(900px 500px at 100% 120%, rgb(71 246 255 / 0.04), transparent 60%),
+      var(--background);
+  }
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
     cursor: pointer;
-    }
-  html {
-    @apply font-sans;
-    }
+  }
+  input,
+  textarea,
+  [contenteditable] {
+    user-select: text;
+  }
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #20353a;
+    border-radius: 8px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+@layer components {
+  /* Bevelled studio panel like the mockup. */
+  .panel {
+    background: linear-gradient(180deg, #191d1e 0%, #16191a 100%);
+    border: 1px solid #2c373a;
+    border-radius: var(--radius-lg);
+    box-shadow:
+      0 0 0 1px rgb(0 0 0 / 0.42),
+      inset 0 1px 0 rgb(255 255 255 / 0.03),
+      0 10px 30px -18px rgb(0 0 0 / 0.9);
+  }
+  /* The waveform sits in a much darker panel than the rest. */
+  .panel-dark {
+    background: linear-gradient(180deg, #101214 0%, #0b0f10 100%);
+  }
+  /* Recessed box: a lit rim around a dark well. */
+  .panel-inset {
+    background: #111718;
+    border: 1px solid #303f42;
+    border-radius: var(--radius-md);
+    box-shadow:
+      inset 0 1px 0 rgb(0 0 0 / 0.55),
+      inset 0 0 0 1px rgb(0 0 0 / 0.22);
+  }
+
+  /* Raised keycap, measured off the mockup: a dark contour, a stroke lit along the top with a darker
+     line just inside it, and a soft shadow underneath. Variants only restate what differs. */
+  .key {
+    --key-lit: rgb(72 92 96);
+    --key-side: rgb(51 61 66);
+    --key-low: rgb(47 61 66);
+    --key-body: linear-gradient(180deg, rgb(30 36 39), rgb(22 28 29));
+    --key-tint: linear-gradient(#0000, #0000);
+    --key-bevel: rgb(225 251 255 / 0.06);
+    --key-glow: 0 0 #0000;
+    --key-icon: #a3ebff;
+    --key-icon-glow: rgb(48 196 255 / 0.5);
+    color: #cfe6e9;
+    border: 1px solid transparent;
+    border-radius: var(--radius-md);
+    background:
+      var(--key-tint) padding-box,
+      var(--key-body) padding-box,
+      linear-gradient(90deg, rgb(255 255 255 / 0.05), #0000 12%, #0000 80%, rgb(0 0 0 / 0.3)) border-box,
+      linear-gradient(180deg, var(--key-lit), var(--key-side) 22%, var(--key-side) 72%, var(--key-low)) border-box;
+    box-shadow:
+      var(--key-glow),
+      0 0 0 1px rgb(0 0 0 / 0.55),
+      0 2px 2px rgb(0 0 0 / 0.42),
+      0 5px 9px -2px rgb(0 0 0 / 0.5),
+      inset 0 1px 0 var(--key-bevel),
+      inset 0 2px 0 rgb(0 0 0 / 0.14);
+    transition:
+      filter 0.12s,
+      transform 0.06s;
+  }
+  .key svg {
+    color: var(--key-icon);
+    filter: drop-shadow(0 0 3px var(--key-icon-glow));
+  }
+  .key:hover:not(:disabled) {
+    filter: brightness(1.14);
+  }
+  .key:active:not(:disabled) {
+    transform: translateY(1px);
+    filter: brightness(0.96);
+    box-shadow:
+      var(--key-glow),
+      0 0 0 1px rgb(0 0 0 / 0.6),
+      0 1px 1px rgb(0 0 0 / 0.45),
+      inset 0 1px 0 rgb(225 251 255 / 0.06),
+      inset 0 2px 0 rgb(0 0 0 / 0.2);
+  }
+  .key:disabled {
+    --key-lit: rgb(64 77 80);
+    --key-side: rgb(40 48 50);
+    --key-low: rgb(28 35 37);
+    --key-body: linear-gradient(180deg, rgb(29 34 36), rgb(16 20 21));
+    --key-icon: #75898d;
+    --key-icon-glow: #0000;
+    color: #75898d;
+  }
+  /* Transport and dropdowns: brighter top edge and a glow behind the icon. */
+  .key-bright {
+    --key-lit: rgb(93 139 154);
+    --key-side: rgb(65 87 97);
+    --key-low: rgb(40 55 62);
+    --key-body: linear-gradient(180deg, rgb(29 41 45), rgb(23 29 32) 60%, rgb(24 30 33));
+    --key-tint: radial-gradient(50% 60% at 50% 50%, rgb(36 176 255 / 0.1), #0000);
+    --key-bevel: rgb(180 238 255 / 0.14);
+    --key-icon-glow: rgb(36 184 255 / 0.85);
+  }
+  /* Same tint, quieter: dropdowns sit next to text, not in the transport. */
+  .key-soft {
+    --key-lit: rgb(73 99 112);
+    --key-side: rgb(50 64 72);
+    --key-low: rgb(41 54 60);
+    --key-tint: linear-gradient(#0000, #0000);
+    --key-bevel: rgb(180 238 255 / 0.1);
+    --key-icon-glow: rgb(48 196 255 / 0.5);
+  }
+  /* Large secondary action: a strong sheen off the top edge. */
+  .key-sheen {
+    --key-lit: rgb(130 159 170);
+    --key-side: rgb(50 62 66);
+    --key-low: rgb(54 67 72);
+    --key-body: linear-gradient(180deg, rgb(56 66 70), rgb(34 42 44) 26%, rgb(23 28 29) 58%, rgb(32 41 44));
+  }
+  /* Lit selection (A/B slots, loop on). */
+  .key-on {
+    --key-lit: rgb(90 152 178);
+    --key-side: rgb(64 110 134);
+    --key-low: rgb(36 100 140);
+    --key-body: linear-gradient(180deg, rgb(48 80 101), rgb(32 55 70) 45%, rgb(27 50 66));
+    --key-tint: radial-gradient(70% 42% at 50% 100%, rgb(40 137 190 / 0.75), #0000);
+    --key-bevel: rgb(160 235 255 / 0.32);
+    --key-glow: 0 0 13px 1px rgb(32 178 255 / 0.26);
+    --key-icon: #7ae3ff;
+    color: #96e6ff;
+    text-shadow:
+      0 0 3px rgb(24 181 255),
+      0 0 10px rgb(24 181 255 / 0.9);
+  }
+  /* Unselected partner of .key-on. */
+  .key-dim {
+    --key-lit: rgb(64 77 80);
+    --key-side: rgb(40 48 50);
+    --key-low: rgb(28 35 37);
+    --key-body: linear-gradient(180deg, rgb(29 34 36), rgb(15 18 19));
+    color: #a2bbbf;
+  }
+  /* Dark-faced key holding text (preset picker, engine status). */
+  .key-well {
+    --key-lit: rgb(55 66 70);
+    --key-side: rgb(43 51 54);
+    --key-low: rgb(46 57 61);
+    --key-body: linear-gradient(180deg, rgb(16 20 22), rgb(20 24 25));
+  }
+
+  .engine-pill {
+    --key-lit: rgb(54 87 100);
+    --key-side: rgb(45 72 84);
+    --key-low: rgb(40 65 76);
+  }
+
+  /* Hot primary action: lit from the top-left corner, deep blue to the right, rim-lit all round. */
+  .key-hot {
+    color: #e4fbff;
+    border: 1px solid transparent;
+    border-radius: var(--radius-md);
+    background:
+      radial-gradient(50% 75% at 0% 0%, rgb(84 238 253), rgb(62 209 250 / 0.8) 50%, #0000) padding-box,
+      linear-gradient(90deg, rgb(66 214 252), rgb(58 192 248 / 0.86) 12%, rgb(48 165 232 / 0.62) 24%, rgb(40 129 200 / 0.36) 40%, #0000 60%) padding-box,
+      linear-gradient(270deg, rgb(32 87 150 / 0.6), #0000 12%) padding-box,
+      linear-gradient(180deg, rgb(50 174 240 / 0.95), rgb(44 151 226 / 0.66) 15%, rgb(38 121 200 / 0.25) 30%, #0000 44%) padding-box,
+      linear-gradient(0deg, rgb(44 140 224 / 0.95), rgb(36 114 190 / 0.36) 10%, #0000 22%) padding-box,
+      linear-gradient(rgb(28 83 142), rgb(28 83 142)) padding-box,
+      linear-gradient(90deg, #0000 45%, rgb(14 69 120 / 0.42)) border-box,
+      linear-gradient(180deg, #acfbff, #7cf8ff 26%, #5ad2f4 70%, #46b6ea) border-box;
+    box-shadow:
+      0 0 0 1px rgb(10 67 116 / 0.78),
+      0 0 5px rgb(24 169 255 / 0.32),
+      -5px -3px 15px 1px rgb(20 158 255 / 0.46),
+      inset 0 2px 5px -1px rgb(104 247 255 / 0.6),
+      inset 2px 0 5px -2px rgb(110 243 255 / 0.5),
+      inset -3px 0 6px -2px rgb(50 138 214 / 0.6);
+    text-shadow: 0 1px 2px rgb(5 51 90 / 0.6);
+    transition:
+      filter 0.12s,
+      transform 0.06s;
+  }
+  .key-hot svg {
+    color: #d2f9ff;
+    filter: drop-shadow(0 0 6px rgb(130 236 255 / 0.9));
+  }
+  .key-hot:hover:not(:disabled) {
+    filter: brightness(1.08);
+  }
+  .key-hot:active:not(:disabled) {
+    transform: translateY(1px);
+    filter: brightness(0.94);
+  }
+  .key-hot:disabled {
+    filter: grayscale(0.6) brightness(0.7);
+    box-shadow: none;
+  }
+  /* Active sidebar item: the same charge, fading out left to right. */
+  .nav-on {
+    color: #d6eff6;
+    border: 1px solid transparent;
+    background:
+      linear-gradient(180deg, rgb(44 130 190 / 0.42), #0000 26%) padding-box,
+      radial-gradient(24% 190% at 0% 50%, rgb(50 189 250) 0%, rgb(40 129 196) 40%, rgb(33 85 122) 84%, #0000 100%) padding-box,
+      linear-gradient(90deg, rgb(31 78 112), rgb(31 72 102) 45%, rgb(26 45 55) 88%) padding-box,
+      linear-gradient(90deg, #6cf2ff, #4ec2e8 16%, #3a8db4 42%, #2d4d5f) border-box;
+    box-shadow:
+      0 0 0 1px rgb(10 46 70 / 0.8),
+      -3px 0 11px rgb(20 158 255 / 0.5),
+      0 2px 3px rgb(0 0 0 / 0.5);
+  }
+  .nav-on svg {
+    color: #c4f8ff;
+    filter: drop-shadow(0 0 5px rgb(130 236 255 / 0.9));
+  }
+
+  /* Take card: raised like a key, with a lit outline when it's the clip in the editor. */
+  .take-card {
+    border: 1px solid transparent;
+    border-radius: var(--radius-md);
+    background:
+      linear-gradient(180deg, rgb(24 28 30), rgb(22 25 26)) padding-box,
+      linear-gradient(180deg, rgb(47 57 60), rgb(37 45 48)) border-box;
+    box-shadow:
+      0 0 0 1px rgb(0 0 0 / 0.42),
+      0 3px 5px -1px rgb(0 0 0 / 0.5);
+  }
+  .take-card:hover {
+    filter: brightness(1.08);
+  }
+  .take-card-on {
+    border: 2px solid #5ee6ff;
+    background: #141a1b;
+    box-shadow:
+      0 0 0 1px rgb(8 50 90 / 0.9),
+      0 0 16px 2px rgb(20 158 255 / 0.42),
+      inset 0 0 0 1px rgb(20 98 150 / 0.7),
+      inset 0 0 14px rgb(32 178 255 / 0.24);
+  }
+  .take-play {
+    border: 1.5px solid #386c8a;
+    box-shadow:
+      0 0 0 1px rgb(0 0 0 / 0.32),
+      inset 0 0 0 1px rgb(0 0 0 / 0.25);
+    color: #47d2ff;
+  }
+  .take-play svg {
+    filter: drop-shadow(0 0 5px rgb(32 178 255 / 0.85));
+  }
+  .take-play:hover {
+    background: rgb(31 204 255 / 0.1);
+  }
+
+  /* Waveform view: the wave itself is two canvases (see lib/wave.ts). */
+.wave-view {
+    border-block: 1px solid rgb(58 70 74);
+    border-left: 1px solid rgb(108 139 150);
+    box-shadow:
+      0 -1px 0 rgb(9 12 15),
+      0 1px 0 rgb(5 8 9),
+      inset 0 1px 0 rgb(43 51 54);
+  }
+  .wave-cursor {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    translate: -50% 0;
+    pointer-events: none;
+    background: linear-gradient(90deg, #92f2ff, #e2feff, #92f2ff);
+    box-shadow: 0 0 5px 1px rgb(16 174 255 / 0.8);
+  }
+  .wave-cursor::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 50%;
+    translate: -50% 0;
+    border-inline: 5px solid #0000;
+    border-top: 6px solid #b4fbff;
+  }
+
+  /* Timeline blocks. Same lightness and chroma throughout, so only the hue changes: the body of the song
+     stays in the accent's cool neighbours, and the chorus takes its complement, so it stands out. */
+  .section-intro {
+    --section: oklch(0.72 0.13 225);
+  }
+  .section-verse {
+    --section: oklch(0.72 0.13 262);
+  }
+  .section-pre-chorus {
+    --section: oklch(0.72 0.13 295);
+  }
+  .section-chorus {
+    --section: oklch(0.72 0.13 65);
+  }
+  .section-bridge {
+    --section: oklch(0.72 0.13 340);
+  }
+  .section-interlude {
+    --section: oklch(0.72 0.13 190);
+  }
+  .section-instrumental {
+    --section: oklch(0.72 0.13 160);
+  }
+  .section-outro {
+    --section: oklch(0.72 0.04 245);
+  }
+  .section-block {
+    background: linear-gradient(180deg, color-mix(in oklab, var(--section) 36%, #0000), color-mix(in oklab, var(--section) 16%, #0000));
+    border-color: color-mix(in oklab, var(--section) 55%, #0000);
+    box-shadow: inset 0 2px 0 color-mix(in oklab, var(--section) 85%, #0000);
+  }
+  .section-silence {
+    background: repeating-linear-gradient(135deg, #0000 0 6px, var(--muted) 6px 12px);
+    border-style: dashed;
+    border-color: color-mix(in oklab, var(--muted-foreground) 40%, #0000);
+    box-shadow: none;
+  }
+
+  .label-caps {
+    @apply text-[11px] font-semibold tracking-[0.16em] uppercase text-muted-foreground;
+  }
+  .wordmark {
+    font-family: var(--font-display);
+    letter-spacing: 0.14em;
+  }
+  .drag-region {
+    -webkit-app-region: drag;
+  }
+  .no-drag {
+    -webkit-app-region: no-drag;
+  }
+  .glow-text {
+    text-shadow: 0 0 18px var(--glow);
+  }
 }

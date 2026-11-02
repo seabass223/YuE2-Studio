@@ -1,6 +1,7 @@
 import { useRef, useState } from "react"
 import { ArrowLeftIcon, ArrowRightIcon, CopyIcon, MinusIcon, PlusIcon, Trash2Icon } from "lucide-react"
 
+import { FIELD, FIELD_TRIGGER, ParamKnob } from "@/components/param-knob"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -24,19 +25,6 @@ import { cn } from "@/lib/utils"
 
 const MAX_BARS = 64
 const MAX_SECONDS = 360
-
-const COLORS: Record<SectionLabel, string> = {
-  intro: "bg-sky-500/20 border-sky-500/60",
-  verse: "bg-emerald-500/20 border-emerald-500/60",
-  "pre-chorus": "bg-amber-500/20 border-amber-500/60",
-  chorus: "bg-rose-500/20 border-rose-500/60",
-  bridge: "bg-violet-500/20 border-violet-500/60",
-  interlude: "bg-teal-500/20 border-teal-500/60",
-  instrumental: "bg-indigo-500/20 border-indigo-500/60",
-  outro: "bg-slate-500/20 border-slate-500/60",
-  silence:
-    "border-dashed border-muted-foreground/40 bg-[repeating-linear-gradient(135deg,transparent_0_6px,var(--muted)_6px_12px)]",
-}
 
 export const DEFAULT_TIMELINE: Timeline = {
   bpm: 120,
@@ -168,26 +156,21 @@ export function TimelineEditor({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="grid grid-cols-[5.5rem_5.5rem_5.5rem_1fr] items-end gap-3">
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="bpm">BPM</Label>
-          <Input
-            id="bpm"
-            type="number"
-            min={40}
-            max={240}
-            value={value.bpm}
-            onChange={(e) => {
-              const bpm = Number(e.target.value)
-              if (bpm) onChange({ ...value, bpm })
-            }}
-            onBlur={() => onChange({ ...value, bpm: Math.max(40, Math.min(240, Math.round(value.bpm))) })}
-          />
-        </div>
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="meter">Meter</Label>
+      <div className="grid grid-cols-[minmax(150px,1fr)_minmax(90px,0.6fr)_minmax(90px,0.6fr)_minmax(180px,1.6fr)] items-center gap-5 param-tight:gap-3">
+        <ParamKnob
+          label="BPM"
+          value={value.bpm}
+          min={40}
+          max={240}
+          step={1}
+          decimals={0}
+          defaultValue={DEFAULT_TIMELINE.bpm}
+          onChange={(bpm) => onChange({ ...value, bpm: Math.round(bpm) })}
+        />
+        <div className={FIELD}>
+          <Label htmlFor="meter" className="shrink-0">Meter</Label>
           <Select value={value.meter} onValueChange={(meter) => onChange({ ...value, meter: meter as Meter })}>
-            <SelectTrigger id="meter" className="w-full">
+            <SelectTrigger id="meter" className={FIELD_TRIGGER}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -196,14 +179,14 @@ export function TimelineEditor({
             </SelectContent>
           </Select>
         </div>
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="key">Key</Label>
-          <KeySelect id="key" value={songKey} onChange={onSongKeyChange} />
+        <div className={FIELD}>
+          <Label htmlFor="key" className="shrink-0">Key</Label>
+          <KeySelect id="key" className={FIELD_TRIGGER} value={songKey} onChange={onSongKeyChange} />
         </div>
         <div className="flex flex-col gap-2">
           <div className="flex items-baseline justify-between">
             <Label htmlFor="length">Length</Label>
-            <span className={cn("text-xs tabular-nums", seconds > MAX_SECONDS ? "text-destructive" : "text-muted-foreground")}>
+            <span className={cn("font-mono text-xs tabular-nums", seconds > MAX_SECONDS ? "text-destructive" : "text-muted-foreground")}>
               {formatLength(seconds)} · {bars} bars
             </span>
           </div>
@@ -221,7 +204,7 @@ export function TimelineEditor({
       </div>
 
       <div className="flex flex-col gap-1">
-        <div ref={strip} className="flex h-14 w-full overflow-hidden rounded-lg border bg-muted/30">
+        <div ref={strip} className="panel-inset flex h-14 w-full overflow-hidden">
           {value.sections.map((section) => (
             <div
               key={section.id}
@@ -233,8 +216,8 @@ export function TimelineEditor({
                 onClick={() => setSelectedId(section.id)}
                 className={cn(
                   "flex h-full w-full flex-col items-start justify-center overflow-hidden border-r px-1.5 text-left",
-                  COLORS[section.label],
-                  section.id === selectedId && "ring-2 ring-ring ring-inset",
+                  `section-block section-${section.label}`,
+                  section.id === selectedId && "shadow-[inset_0_0_14px_rgb(31_204_255/0.3)] ring-2 ring-ring ring-inset",
                 )}
                 title={`${section.label}: ${section.bars} bars (${formatLength(section.bars * secondsPerBar)})${
                   section.description ? `\n${section.description}` : ""
@@ -375,7 +358,7 @@ export function TimelineEditor({
           <PlusIcon /> Add section
         </Button>
         <div className="flex items-center gap-2">
-          <Label htmlFor="strict" className="text-xs font-normal">
+          <Label htmlFor="strict">
             Exact section timing
           </Label>
           <Switch id="strict" checked={strict} onCheckedChange={(on) => onChange({ ...value, strict: on })} />

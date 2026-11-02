@@ -27,11 +27,6 @@ interface SongResultData {
 }
 type ToolResult = Awaited<ReturnType<App["callServerTool"]>>
 
-function applyTheme(theme?: string) {
-  const dark = theme ? theme === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches
-  document.documentElement.classList.toggle("dark", dark)
-}
-
 /** Reads an artifact through the host (resources/read) into a data: URL the sandbox's CSP allows. */
 function useArtifactSrc(app: App | null, artifact: Artifact | undefined) {
   const [src, setSrc] = useState<string | null>(null)
@@ -112,7 +107,7 @@ function QuickForm({ input, onSubmit }: { input: InputNeeded; onSubmit: (args: R
           value={key}
           onChange={(e) => setKey(e.target.value)}
           title={KEY_HINT}
-          className="h-8 w-28 rounded-lg border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30 [&_option]:bg-background [&_optgroup]:bg-background"
+          className="panel-inset h-9 w-28 px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 [&_option]:bg-background [&_optgroup]:bg-background"
         >
           <option value="">Auto</option>
           <optgroup label="Major">
@@ -148,7 +143,6 @@ export function MicroApp() {
     onAppCreated: (created) => {
       created.ontoolinput = (params) => setArgs(params.arguments ?? {})
       created.ontoolresult = (params) => setIncoming(params as ToolResult)
-      created.onhostcontextchanged = (context) => applyTheme(context.theme)
     },
   })
   const connected = isConnected ? app : null
@@ -160,10 +154,6 @@ export function MicroApp() {
     accepted.current = incoming
     accept(incoming)
   }, [incoming, accept])
-
-  useEffect(() => {
-    applyTheme(connected?.getHostContext()?.theme)
-  }, [connected])
 
   const result = view.kind === "finished" ? view.result : null
   const primary = result?.artifacts.find((a) => a.role === "primary")
@@ -183,9 +173,9 @@ export function MicroApp() {
   }
 
   return (
-    <div className="flex flex-col gap-3 bg-background p-4 text-foreground">
+    <div className="panel flex flex-col gap-3 p-4 text-foreground">
       <header className="flex min-w-0 items-center gap-2">
-        <MusicIcon className="size-4 shrink-0 text-muted-foreground" />
+        <MusicIcon className="size-4 shrink-0 text-primary" />
         <span className="truncate text-sm font-medium" title={style}>{style || "YuE2 song"}</span>
         <span className="ml-auto shrink-0">{badge}</span>
       </header>

@@ -5,15 +5,21 @@ import { formatTime, type Job } from "@/lib/api"
 
 const STAGES = ["Planning score", "Generating song", "Synthesizing audio", "Decoding audio"]
 
-export function JobProgress({ job }: { job: Pick<Job, "stage" | "completed" | "total" | "unit" | "audio_seconds" | "max_seconds" | "elapsed" | "part"> }) {
+type JobStatus = Pick<Job, "stage" | "completed" | "total" | "unit" | "audio_seconds" | "max_seconds" | "elapsed" | "part">
+
+/** Progress through the current stage, or null when the stage doesn't know its total. */
+export function jobPercent(job: JobStatus) {
+  if (job.stage === "Generating song") return (job.audio_seconds / job.max_seconds) * 100
+  return job.total ? (job.completed / job.total) * 100 : null
+}
+
+export function JobProgress({ job }: { job: JobStatus }) {
   const index = STAGES.indexOf(job.stage)
-  let value: number | null = null
+  const value = jobPercent(job)
   let detail = ""
   if (job.stage === "Generating song") {
-    value = (job.audio_seconds / job.max_seconds) * 100
     detail = `${formatTime(job.audio_seconds)} of music (max ${formatTime(job.max_seconds)})`
   } else if (job.total) {
-    value = (job.completed / job.total) * 100
     detail = `${job.completed} / ${job.total} ${job.unit ?? ""}`
   } else if (job.stage === "Planning score") {
     detail = `${job.completed} score tokens`

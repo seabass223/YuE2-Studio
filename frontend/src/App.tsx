@@ -1,18 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import { Loader2Icon, SparklesIcon, SquareIcon } from "lucide-react"
+import { Loader2Icon, SquareIcon } from "lucide-react"
 import { toast } from "sonner"
 
 import { DEFAULT_PARAMS, GenerateForm } from "@/components/generate-form"
-import { Library } from "@/components/library"
+import { jobPercent } from "@/components/job-progress"
+import { Library, RecentSongs } from "@/components/library"
+import { SparkIcon } from "@/components/logo"
 import { Player } from "@/components/player"
-import { ThemeToggle } from "@/components/theme-toggle"
+import { Sidebar, StatusBar, TitleBar, type View } from "@/components/shell"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { JobProgress } from "@/components/job-progress"
 import { useBackend } from "@/hooks/use-backend"
-import { api, effectiveKey, formatTime, newSectionId, type GenerateParams, type Snapshot, type Track } from "@/lib/api"
+import { api, effectiveKey, formatTime, newSectionId, type GenerateParams, type Track } from "@/lib/api"
+import { cn } from "@/lib/utils"
 
 const FORM_KEY = "yue2-form"
 
@@ -29,21 +29,16 @@ function loadForm(): GenerateParams {
   }
 }
 
-function StatusBadge({ snapshot, connected }: { snapshot: Snapshot | null; connected: boolean }) {
-  if (!connected) return <Badge variant="destructive">Offline</Badge>
-  if (!snapshot) return <Badge variant="secondary">Connecting</Badge>
-  if (snapshot.job?.state === "running") return <Badge>{snapshot.job.kind === "transcribe" ? "Transcribing" : "Generating"}</Badge>
-  const labels = { starting: "Starting", downloading: "Downloading model", loading: "Loading model", ready: "Ready", error: "Error" }
-  return <Badge variant={snapshot.status === "error" ? "destructive" : snapshot.status === "ready" ? "outline" : "secondary"}>{labels[snapshot.status]}</Badge>
-}
-
 export default function App() {
   const { snapshot, connected } = useBackend()
   const [params, setParams] = useState<GenerateParams>(loadForm)
   const [tracks, setTracks] = useState<Track[]>([])
   const [current, setCurrent] = useState<Track | null>(null)
   const [autoPlay, setAutoPlay] = useState(false)
+  const [playing, setPlaying] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [view, setView] = useState<View>("generate")
+  const audio = useRef<HTMLAudioElement>(null)
   const seenJob = useRef<string | null>(null)
 
   useEffect(() => {
@@ -116,9 +111,12 @@ export default function App() {
 
   const running = job?.state === "running" || job?.state === "queued"
   const transcribing = running && job?.kind === "transcribe" // shown and cancelled by the score field
+  const generating = running && !transcribing
   const ready = connected && snapshot?.status === "ready"
+  const canGenerate = ready && !submitting && !running
 
   const generate = async () => {
+    if (!canGenerate) return
     if (!params.style.trim()) {
       toast.error("Add a style description first")
       return
@@ -133,126 +131,109 @@ export default function App() {
     }
   }
 
-  const gpu = snapshot?.gpu
+  const percent = job && generating ? jobPercent(job) : null
+  const trackActions = {
+    currentId: current?.id ?? null,
+    playing,
+    onSelect: (t: Track) => {
+      const el = audio.current
+      if (t.id === current?.id && el) {
+        if (el.paused) el.play().catch(() => {})
+        else el.pause()
+        return
+      }
+      setAutoPlay(true)
+      setCurrent(t)
+    },
+    onUseSettings: (t: Track) => {
+      setParams({
+        ...DEFAULT_PARAMS,
+        ...t.params,
+        instrumental: t.params.instrumental ?? !t.params.lyrics.trim(),
+        abc: t.params.abc ?? "",
+        key: t.params.key ?? t.params.timeline?.key ?? null,
+        timeline: t.params.timeline
+          ? {
+              bpm: t.params.timeline.bpm,
+              meter: t.params.timeline.meter,
+              strict: t.params.timeline.strict,
+              sections: t.params.timeline.sections.map((s) => ({ ...s, id: newSectionId() })),
+            }
+          : params.timeline,
+      })
+      setView("generate")
+      toast("Settings loaded into the form")
+    },
+    onDelete: async (t: Track) => {
+      try {
+        await api.deleteTrack(t.id)
+        if (current?.id === t.id) setCurrent(null)
+        refresh()
+      } catch (e) {
+        toast.error((e as Error).message)
+      }
+    },
+  }
 
   return (
-    <div className="min-h-svh bg-background text-foreground">
-      <header className="sticky top-0 z-10 border-b bg-background/90 backdrop-blur">
-        <div className="mx-auto flex h-14 max-w-6xl items-center gap-3 px-4">
-          <img src="/favicon.svg" alt="" className="size-7" />
-          <h1 className="font-semibold tracking-tight">YuE2 Studio</h1>
-          <StatusBadge snapshot={snapshot} connected={connected} />
-          <div className="ml-auto flex items-center gap-3">
-            {gpu && (
-              <span className="hidden text-xs tabular-nums text-muted-foreground sm:inline" title={gpu.last_peak_gib ? `Last song peaked at ${gpu.last_peak_gib} GB reserved by PyTorch` : undefined}>
-                {gpu.name.replace("NVIDIA GeForce ", "")} · {gpu.used_gib.toFixed(1)} / {gpu.total_gib.toFixed(1)} GB
-              </span>
-            )}
-            <ThemeToggle />
-          </div>
-        </div>
-      </header>
+    <div className="flex h-svh flex-col overflow-hidden select-none">
+      <TitleBar snapshot={snapshot} connected={connected} />
+      <div className="flex min-h-0 flex-1 gap-2.5 p-2.5">
+        <Sidebar view={view} onChange={setView} />
+        <main className="flex min-h-0 min-w-0 flex-1 flex-col gap-2.5">
+          {!connected && snapshot && (
+            <Alert variant="destructive" className="panel shrink-0">
+              <AlertTitle>Backend is not running</AlertTitle>
+              <AlertDescription>Start YuE2 Studio from the Start menu. This page reconnects automatically.</AlertDescription>
+            </Alert>
+          )}
+          {connected && snapshot && snapshot.status !== "ready" && (
+            <Alert variant={snapshot.status === "error" ? "destructive" : "default"} className="panel shrink-0">
+              {snapshot.status !== "error" && <Loader2Icon className="animate-spin" />}
+              <AlertTitle>{snapshot.status === "error" ? "Model failed to load" : snapshot.detail || "Starting"}</AlertTitle>
+              <AlertDescription>
+                {snapshot.status === "error" ? snapshot.detail : "You can fill in the form meanwhile."}
+              </AlertDescription>
+            </Alert>
+          )}
 
-      <main className="mx-auto grid max-w-6xl gap-6 px-4 py-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
-        {!connected && snapshot && (
-          <Alert variant="destructive" className="lg:col-span-2">
-            <AlertTitle>Backend is not running</AlertTitle>
-            <AlertDescription>Start YuE2 Studio from the Start menu. This page reconnects automatically.</AlertDescription>
-          </Alert>
-        )}
-        {connected && snapshot && snapshot.status !== "ready" && (
-          <Alert variant={snapshot.status === "error" ? "destructive" : "default"} className="lg:col-span-2">
-            {snapshot.status !== "error" && <Loader2Icon className="animate-spin" />}
-            <AlertTitle>{snapshot.status === "error" ? "Model failed to load" : snapshot.detail || "Starting"}</AlertTitle>
-            <AlertDescription>
-              {snapshot.status === "error" ? snapshot.detail : "You can fill in the form meanwhile."}
-            </AlertDescription>
-          </Alert>
-        )}
+          <Player track={current} autoPlay={autoPlay} job={generating ? job : null} audio={audio} onPlayingChange={setPlaying} />
 
-        <Card className="self-start">
-          <CardHeader>
-            <CardTitle>New song</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <GenerateForm params={params} onChange={setParams} job={job} audioImport={snapshot?.audio_import ?? false} />
-          </CardContent>
-          <CardFooter className="justify-end gap-2">
-            {running && !transcribing ? (
-              <Button variant="outline" size="lg" onClick={() => api.cancel()}>
-                <SquareIcon /> Cancel
-              </Button>
-            ) : (
-              <Button size="lg" disabled={!ready || submitting || transcribing} onClick={generate}>
-                {submitting ? <Loader2Icon className="animate-spin" /> : <SparklesIcon />} Generate
-              </Button>
-            )}
-          </CardFooter>
-        </Card>
-
-        <div className="flex flex-col gap-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="truncate" title={current?.params.style}>
-                {current ? current.params.style : "Player"}
-              </CardTitle>
-              {current && (
-                <p className="text-xs text-muted-foreground">
-                  {current.params.instrumental ? "Instrumental" : "Vocal"} · seed {current.params.seed} · {current.params.cot} planning · generated in {formatTime(current.seconds_taken)}
-                  {current.truncated && !current.params.instrumental && " · stopped at max length"}
-                </p>
-              )}
-            </CardHeader>
-            <CardContent className="flex flex-col gap-5">
-              {running && !transcribing && job && <JobProgress job={job} />}
-              <Player track={current} autoPlay={autoPlay} />
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Library</CardTitle>
-            </CardHeader>
-            <CardContent className="max-h-[28rem] overflow-y-auto">
-              <Library
-                tracks={tracks}
-                currentId={current?.id ?? null}
-                onSelect={(t) => {
-                  setAutoPlay(true)
-                  setCurrent(t)
-                }}
-                onUseSettings={(t) => {
-                  setParams({
-                    ...DEFAULT_PARAMS,
-                    ...t.params,
-                    instrumental: t.params.instrumental ?? !t.params.lyrics.trim(),
-                    abc: t.params.abc ?? "",
-                    key: t.params.key ?? t.params.timeline?.key ?? null,
-                    timeline: t.params.timeline
-                      ? {
-                          bpm: t.params.timeline.bpm,
-                          meter: t.params.timeline.meter,
-                          strict: t.params.timeline.strict,
-                          sections: t.params.timeline.sections.map((s) => ({ ...s, id: newSectionId() })),
-                        }
-                      : params.timeline,
-                  })
-                  toast("Settings loaded into the form")
-                }}
-                onDelete={async (t) => {
-                  try {
-                    await api.deleteTrack(t.id)
-                    if (current?.id === t.id) setCurrent(null)
-                    refresh()
-                  } catch (e) {
-                    toast.error((e as Error).message)
-                  }
-                }}
+          <div className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto">
+            {/* Generate stays mounted so the form's open sections and selection survive tab switches. */}
+            <div className={cn("flex flex-col gap-2.5", view !== "generate" && "hidden")}>
+              <GenerateForm
+                params={params}
+                onChange={setParams}
+                job={job}
+                audioImport={snapshot?.audio_import ?? false}
+                onGenerate={generate}
+                action={
+                  <Button
+                    className="h-[74px] w-full text-[19px] font-medium tracking-[0.06em]"
+                    disabled={generating ? false : !ready || submitting || transcribing}
+                    onClick={generating ? () => api.cancel() : generate}
+                    title={generating ? "Cancel" : !ready ? "Wait for the model to load" : "Generate (Ctrl+Enter)"}
+                  >
+                    {generating ? <SquareIcon className="size-6 fill-current" /> : submitting ? <Loader2Icon className="size-7 animate-spin" /> : <SparkIcon className="size-7" />}
+                    {generating ? (
+                      <span className="flex flex-col items-center leading-tight">
+                        {percent === null ? "WORKING" : `${Math.round(percent)}%`}
+                        <span className="text-[10px] font-medium tracking-normal opacity-80">click to cancel</span>
+                      </span>
+                    ) : (
+                      "GENERATE"
+                    )}
+                  </Button>
+                }
               />
-            </CardContent>
-          </Card>
-        </div>
-      </main>
+              <RecentSongs {...trackActions} tracks={tracks} generating={generating} />
+            </div>
+            {view === "library" && <Library {...trackActions} tracks={tracks} />}
+          </div>
+        </main>
+      </div>
+      <StatusBar snapshot={snapshot} connected={connected} current={current} />
     </div>
   )
 }

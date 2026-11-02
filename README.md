@@ -2,6 +2,8 @@
 
 A small local web UI for [YuE2](https://github.com/multimodal-art-projection/YuE) (M-A-P's lyrics + style → full-song model), tuned to run on a 12 GB RTX 3060 under Windows 11.
 
+![YuE2 Studio's Generate view: a waveform player above the style prompt, knobs and a color-coded song timeline](docs/screenshot.png)
+
 ## Install
 
 Requires Python 3.12 (with the `py` launcher), Node.js, and an NVIDIA GPU. [Import from audio](#covers) also needs FFmpeg on `PATH` (`winget install Gyan.FFmpeg`).
@@ -24,28 +26,37 @@ Launch **YuE2 Studio** from the Start menu. `YuE2 Studio.exe` runs `scripts\laun
 
 Songs are saved to `outputs\<timestamp>-<id>\`. Each folder has `audio.flac` (48 kHz stereo), `score.abc` (the generated melody and chord plan), and the full YuE2 artifact set.
 
+## The studio
+
+- **Player.** It stays above both views, so a song keeps playing while you work. Click or drag the waveform to seek. Space plays and pauses, and the meter on the right shows the left and right levels.
+- **Generate.** Choose Instrumental or Vocal, describe the style, and lay out the song. **Generate** (or Ctrl+Enter in the style box) shows its progress and becomes the cancel button while a song runs. The latest four songs are below the form.
+- **Library.** Every song, with its waveform. The ⋮ menu loads a song's settings back into the form, downloads its MP3, FLAC or score, or deletes it.
+- **Knobs.** Drag up or down (hold Shift for fine control) or scroll to change a value, double-click to reset it to its default where it has one, or type in the box beside it.
+
+The status bar shows the current job, and the pill in the title bar shows the GPU and its VRAM use.
+
 ## Parameters
 
 | UI | YuE2 | Notes |
 |---|---|---|
 | Style | `style` | Genre, mood, instruments, vocal type. |
 | Lyrics | `lyrics` | Use section tags like `[Verse]`, `[Chorus]`, `[Bridge]`, `[Outro]`. |
-| Instrumental | (see below) | No lyrics. Lay the song out on the timeline. |
+| Instrumental / Vocal | (see below) | Instrumental: no lyrics, and you lay the song out on the timeline. |
 | Fix stray vocals | (see [below](#stray-vocals)) | Instrumentals: listen for singing and re-render the part that has it. On by default. |
 | Timeline | (see below) | BPM, meter (4/4 or 3/4), key, and labeled sections in whole bars. Sets the exact length. |
 | Key | (see [below](#key)) | Auto, or a major/minor key for the planned score. In the timeline for instrumentals, next to Planning for songs with lyrics. |
 | Max length | `semantic_sampling.max_tokens` (25 tokens/s) | Songs with lyrics: length follows the lyrics, and this only caps it (max 6:00). |
 | Planning | `cot` | `full`: melody + chords score first (default). `melody`: melody only. `off`: no score. |
-| Seed | `seed` | Leave blank for random. |
-| Guidance (CFG) | `cfg_scale` | Auto = model default. Values above 1 run a second branch. |
-| Temperature / Top-p / Top-k / Repetition penalty | `semantic_sampling.*` | Song-token sampling. |
+| Seed | `seed` | Random by default. The button beside the value locks a seed or goes back to random. |
+| Guidance | `cfg_scale` | Auto = model default. Values above 1 run a second branch. |
+| Temperature / Top-p / Top-k / Repetition | `semantic_sampling.*` | Song-token sampling. Repetition is the repetition penalty. |
 | Flow steps | `GenerationConfig.ode_steps` | Acoustic flow-matching steps (default 32). |
 | Score (ABC) | `abc` | Supply or edit a score, e.g. one downloaded from an earlier song. |
 | Import from audio | `abc` + `cot="melody"` | Transcribes a recording's melody into Score with SheetSage2 for a [cover](#covers), and sets Planning to Melody only. |
 
 ## Instrumentals on a timeline
 
-In Instrumental mode you set the BPM, the meter, the key, and a row of sections (intro, verse, pre-chorus, chorus, bridge, interlude, instrumental, outro, silence), each a whole number of bars. You can drag a section's right edge, use −/+ or type the bar count, move sections, duplicate or delete them, or drag **Length** to rescale all sections to fit. The length is always exactly bars × beats ÷ BPM.
+In Instrumental mode you set the BPM, the meter, the key, and a row of sections (intro, verse, pre-chorus, chorus, bridge, interlude, instrumental, outro, silence), each a whole number of bars and each with its own color. You can drag a section's right edge, use −/+ or type the bar count, move sections, duplicate or delete them, or drag **Length** to rescale all sections to fit. The length is always exactly bars × beats ÷ BPM.
 
 YuE2 still composes the score; `backend/timeline.py` keeps it on the timeline:
 
@@ -76,7 +87,7 @@ Over the API and MCP, `key` takes `A`, `Em`, `Bb`, `F#m`, `C major`, `d minor` a
 
 ## Instrumentals from a pasted score
 
-With a score in **Advanced → Score (ABC)**, the timeline is replaced by a **Length** slider. `backend/fitted.py` fits the score to that length. Without a score or timeline (API only), it also steers YuE2's own free-running plan to the length:
+With a score in **Advanced → Score (ABC)**, the timeline is replaced by a **Length** knob. `backend/fitted.py` fits the score to that length. Without a score or timeline (API only), it also steers YuE2's own free-running plan to the length:
 
 1. **Planning.** YuE2 writes the score with its own sampler (in the requested [key](#key), if any). Once it has chosen tempo and meter, the target length becomes a bar count. The score can't end early, an `% outro` section is forced near the end (no `% silence` sections, no new sections after the outro), and the score closes at the target bar.
 2. **Tempo fit.** The `Q:` tempo is adjusted (at most ±15%, usually a few %) so the score's nominal length equals the target.
@@ -91,7 +102,7 @@ YuE2 can't listen to a recording, because its audio tokenizer isn't released. A 
 
 1. **Advanced → Import from audio.** Pick a recording in any format FFmpeg reads, up to 200 MB. Only the first 6:00 is used, YuE2's longest song. [SheetSage2](https://huggingface.co/m-a-p/SheetSage2) transcribes the melody to ABC. It keeps the vocal and instrument melody lines and leaves out chord symbols.
 2. The score fills **Score (ABC)**. **Planning** switches to **Melody only**, so YuE2 keeps the tune but writes its own harmony and accompaniment for the new style. **Length** is set to the recording's.
-3. Add a style. For a sung cover, turn **Instrumental** off and write lyrics whose sections and syllables follow the melody. For an instrumental cover, leave it on: the melody moves to the instrument voice, as with [a pasted score](#instrumentals-from-a-pasted-score).
+3. Add a style. For a sung cover, switch to **Vocal** and write lyrics whose sections and syllables follow the melody. For an instrumental cover, stay on **Instrumental**: the melody moves to the instrument voice, as with [a pasted score](#instrumentals-from-a-pasted-score).
 4. Generate.
 
 Transcription mistakes carry into the cover, so read through the score, or listen to the source and compare, before a long render. A melody SheetSage2 hears as an instrument lands in the `Ins` voice and the `Vocal` voice is left as rests. For a sung cover of an instrumental recording, move those notes to `Vocal` by hand.
@@ -193,6 +204,8 @@ cd frontend; npm run dev
 `npm run build` builds both the studio (`frontend\dist`) and the MCP micro UI. The micro UI is `frontend\src\micro`, built into one self-contained file, `frontend\dist-micro\micro.html`. The backend reads that file on every request, so rebuilding it needs no restart.
 
 Regenerate icons after editing `assets\icon.svg` with `npm run icons` in `frontend\`.
+
+The look is shared with StableSFX Studio: the same panels, keys, knobs and waveform painter, with an electric cyan accent. It is dark only. The theme and the timeline's section colors are in `frontend\src\index.css`. Tracks carry no peak data, so the browser decodes the audio to draw waveforms (`frontend\src\lib\peaks.ts`) and keeps each song card's envelope in `localStorage`.
 
 ## License
 

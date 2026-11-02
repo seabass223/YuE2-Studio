@@ -1,19 +1,18 @@
 import { useRef, useState } from "react"
-import { ChevronDownIcon, DicesIcon, FileAudioIcon, Loader2Icon } from "lucide-react"
+import { ChevronDownIcon, FileAudioIcon, Loader2Icon, LockIcon, ShuffleIcon } from "lucide-react"
 import { toast } from "sonner"
 
 import { JobProgress } from "@/components/job-progress"
+import { FIELD, FIELD_TRIGGER, ParamKnob } from "@/components/param-knob"
 import { Button } from "@/components/ui/button"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
-import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Slider } from "@/components/ui/slider"
 import { Switch } from "@/components/ui/switch"
-import { Textarea } from "@/components/ui/textarea"
 import { KeySelect } from "@/components/key-select"
 import { DEFAULT_TIMELINE, TimelineEditor } from "@/components/timeline-editor"
 import { api, formatTime, KEY_HINT, type Cot, type GenerateParams, type Job } from "@/lib/api"
+import { cn } from "@/lib/utils"
 
 export const DEFAULT_PARAMS: GenerateParams = {
   style: "",
@@ -44,44 +43,16 @@ Chorus lines...
 
 [Outro]`
 
-function SliderField({
-  id,
-  label,
-  hint,
-  value,
-  display,
-  min,
-  max,
-  step,
-  onChange,
-}: {
-  id: string
-  label: string
-  hint?: string
-  value: number
-  display?: string
-  min: number
-  max: number
-  step: number
-  onChange: (v: number) => void
-}) {
-  return (
-    <div className="flex flex-col gap-2">
-      <div className="flex items-baseline justify-between">
-        <Label htmlFor={id}>{label}</Label>
-        <span className="text-xs tabular-nums text-muted-foreground">{display ?? value}</span>
-      </div>
-      <Slider id={id} aria-label={label} min={min} max={max} step={step} value={[value]} onValueChange={([v]) => onChange(v)} />
-      {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
-    </div>
-  )
-}
+const MAX_SEED = 2 ** 31 - 1
+const PARAM_ROW = "grid grid-cols-[repeat(auto-fit,minmax(190px,1fr))] items-center gap-5 param-tight:gap-3"
 
 export function GenerateForm({
   params,
   onChange,
   job,
   audioImport,
+  onGenerate,
+  action,
 }: {
   params: GenerateParams
   onChange: (p: GenerateParams) => void
@@ -89,6 +60,9 @@ export function GenerateForm({
   job: Job | null
   /** SheetSage2 is installed. */
   audioImport: boolean
+  onGenerate: () => void
+  /** The Generate button, next to the style. */
+  action: React.ReactNode
 }) {
   const [advanced, setAdvanced] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -116,109 +90,84 @@ export function GenerateForm({
     }
   }
 
-  return (
-    <div className="flex flex-col gap-5">
-      <div className="flex flex-col gap-2">
-        <Label htmlFor="style">Style</Label>
-        <Textarea
-          id="style"
-          rows={3}
-          placeholder="Genre, mood, instruments, vocals. e.g. Indie rock, driving drums, jangly guitars, male vocal, nostalgic"
-          value={params.style}
-          onChange={(e) => set("style", e.target.value)}
-        />
-      </div>
+  const setInstrumental = (on: boolean) => onChange({ ...params, instrumental: on, cot: on && params.cot === "off" ? "full" : params.cot })
 
-      <div className="flex flex-col gap-2">
-        <div className="flex items-center justify-between gap-3">
-          <Label htmlFor="lyrics">Lyrics</Label>
-          <div className="flex items-center gap-2">
-            {!params.instrumental && (
-              <span className="hidden text-xs text-muted-foreground sm:inline">Section tags like [Verse], [Chorus]</span>
-            )}
-            <Label htmlFor="instrumental" className="text-xs font-normal text-muted-foreground">
-              Instrumental
-            </Label>
-            <Switch
-              id="instrumental"
-              checked={params.instrumental}
-              onCheckedChange={(on) => onChange({ ...params, instrumental: on, cot: on && params.cot === "off" ? "full" : params.cot })}
-            />
-          </div>
-        </div>
-        {params.instrumental ? (
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-xs text-muted-foreground">No vocals. Lay out the song's sections below.</p>
-            <div
-              className="flex shrink-0 items-center gap-2"
-              title="YuE2 sometimes sings anyway. Listen for it and re-render the part that has singing (up to 2 times)."
+  return (
+    <div className="@container/prompt-panel panel flex shrink-0 flex-col gap-3 px-5 pt-3 pb-3">
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <div role="radiogroup" aria-label="Song type" className="key key-well flex gap-1 p-0.5">
+          {(
+            [
+              [true, "Instrumental", "No vocals. Lay out the song's sections below."],
+              [false, "Vocal", "Sung lyrics. Section tags like [Verse], [Chorus] shape the song."],
+            ] as const
+          ).map(([on, label, hint]) => (
+            <button
+              key={label}
+              role="radio"
+              aria-checked={params.instrumental === on}
+              title={hint}
+              onClick={() => setInstrumental(on)}
+              className={cn("h-7 rounded-md px-3 text-xs font-medium", params.instrumental === on ? "key key-on" : "hover:bg-white/5")}
             >
-              <Label htmlFor="vocal-check" className="text-xs font-normal text-muted-foreground">
-                Fix stray vocals
-              </Label>
-              <Switch id="vocal-check" checked={params.vocal_check} onCheckedChange={(on) => set("vocal_check", on)} />
-            </div>
+              {label}
+            </button>
+          ))}
+        </div>
+        {params.instrumental && (
+          <div className="flex items-center gap-2" title="YuE2 sometimes sings anyway. Listen for it and re-render the part that has singing (up to 2 times).">
+            <Label htmlFor="vocal-check">Fix stray vocals</Label>
+            <Switch id="vocal-check" checked={params.vocal_check} onCheckedChange={(on) => set("vocal_check", on)} />
           </div>
-        ) : (
-          <Textarea
-            id="lyrics"
-            rows={12}
-            className="font-mono text-xs leading-relaxed"
-            placeholder={LYRICS_PLACEHOLDER}
-            value={params.lyrics}
-            onChange={(e) => set("lyrics", e.target.value)}
-          />
         )}
       </div>
 
-      {timelineActive ? (
-        <TimelineEditor
-          value={params.timeline}
-          onChange={(t) => set("timeline", t)}
-          songKey={params.key}
-          onSongKeyChange={(k) => set("key", k)}
-        />
-      ) : (
-        <div className="grid grid-cols-[1fr_5.5rem] items-start gap-4">
-          <SliderField
-            id="max-seconds"
-            label={params.instrumental ? "Length" : "Max length"}
-            hint={
-              params.instrumental
-                ? "Using the score from Advanced instead of the timeline (clear it to use the timeline). Its tempo is fitted to this length."
-                : "Song length follows the lyrics; generation stops here if it runs longer. Shorter caps use less VRAM."
-            }
-            value={params.max_seconds}
-            display={formatTime(params.max_seconds)}
-            min={10}
-            max={360}
-            step={5}
-            onChange={(v) => set("max_seconds", v)}
+      <div className="flex gap-4 max-md:flex-col">
+        <Label htmlFor="style" className="w-[64px] shrink-0 items-start pt-3 max-md:pt-0">
+          Style
+        </Label>
+        <div className="panel-inset relative min-w-0 flex-1 bg-[#191c1e]">
+          <textarea
+            id="style"
+            className="block h-[74px] w-full resize-none bg-transparent px-4 py-2.5 text-[15px] leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/60"
+            placeholder="Genre, mood, instruments, vocals. e.g. Indie rock, driving drums, jangly guitars, male vocal, nostalgic"
+            value={params.style}
+            onChange={(e) => set("style", e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) onGenerate()
+            }}
           />
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="song-key">Key</Label>
-            <KeySelect
-              id="song-key"
-              value={keyBlocked ? null : params.key}
-              onChange={(k) => set("key", k)}
-              disabled={Boolean(keyBlocked)}
-              title={keyBlocked ?? KEY_HINT}
+        </div>
+        <div className="w-[240px] shrink-0 max-md:w-full">{action}</div>
+      </div>
+
+      {!params.instrumental && (
+        <div className="flex gap-4 max-md:flex-col">
+          <Label htmlFor="lyrics" className="w-[64px] shrink-0 items-start pt-3 max-md:pt-0">
+            Lyrics
+          </Label>
+          <div className="panel-inset min-w-0 flex-1 bg-[#191c1e]">
+            <textarea
+              id="lyrics"
+              rows={12}
+              className="block w-full resize-y bg-transparent px-4 py-2.5 font-mono text-xs leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/60"
+              placeholder={LYRICS_PLACEHOLDER}
+              value={params.lyrics}
+              onChange={(e) => set("lyrics", e.target.value)}
             />
           </div>
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="cot">Planning</Label>
-          <Select
-            value={timelineActive ? "full" : params.cot}
-            onValueChange={(v) => set("cot", v as Cot)}
-            disabled={timelineActive}
-          >
+      <div className={cn(PARAM_ROW, "border-t border-border/60 pt-3")}>
+        <div className={FIELD}>
+          <Label htmlFor="cot" className="shrink-0">
+            Planning
+          </Label>
+          <Select value={timelineActive ? "full" : params.cot} onValueChange={(v) => set("cot", v as Cot)} disabled={timelineActive}>
             <SelectTrigger
               id="cot"
-              className="w-full"
+              className={FIELD_TRIGGER}
               title={timelineActive ? "The timeline needs chords in every bar to keep the audio on its beat grid." : undefined}
             >
               <SelectValue />
@@ -232,68 +181,104 @@ export function GenerateForm({
             </SelectContent>
           </Select>
         </div>
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="seed">Seed</Label>
-          <div className="flex gap-2">
-            <Input
-              id="seed"
-              inputMode="numeric"
-              placeholder="Random"
-              value={params.seed ?? ""}
-              onChange={(e) => {
-                const digits = e.target.value.replace(/\D/g, "")
-                set("seed", digits ? Number(digits) : null)
-              }}
+        <ParamKnob
+          label="Seed"
+          value={params.seed ?? 0}
+          min={0}
+          max={MAX_SEED}
+          step={1}
+          decimals={0}
+          display={params.seed === null ? "Random" : String(params.seed)}
+          hint="A fixed seed reproduces a song; Random picks a new one each time."
+          onChange={(v) => set("seed", Math.round(v))}
+          adornment={
+            <button
+              aria-label={params.seed === null ? "Lock a seed" : "Back to random"}
+              title={params.seed === null ? "Lock a seed" : "Back to random"}
+              onClick={() => set("seed", params.seed === null ? Math.floor(Math.random() * 99999) : null)}
+              className={cn("hover:text-primary", params.seed === null ? "text-muted-foreground" : "text-primary")}
+            >
+              {params.seed === null ? <ShuffleIcon className="size-4" /> : <LockIcon className="size-4" />}
+            </button>
+          }
+        />
+        {!timelineActive && (
+          <>
+            <ParamKnob
+              label={params.instrumental ? "Length" : "Max length"}
+              value={params.max_seconds}
+              min={10}
+              max={360}
+              step={5}
+              decimals={0}
+              defaultValue={DEFAULT_PARAMS.max_seconds}
+              display={formatTime(params.max_seconds)}
+              hint="In seconds. Shorter caps use less VRAM."
+              onChange={(v) => set("max_seconds", v)}
             />
-            <Button variant="outline" size="icon" aria-label="Random seed" title="Random seed" onClick={() => set("seed", null)}>
-              <DicesIcon />
-            </Button>
-          </div>
-        </div>
+            <div className={FIELD}>
+              <Label htmlFor="song-key" className="shrink-0">
+                Key
+              </Label>
+              <KeySelect
+                id="song-key"
+                className={FIELD_TRIGGER}
+                value={keyBlocked ? null : params.key}
+                onChange={(k) => set("key", k)}
+                disabled={Boolean(keyBlocked)}
+                title={keyBlocked ?? KEY_HINT}
+              />
+            </div>
+          </>
+        )}
       </div>
+      {!timelineActive && (
+        <p className="text-xs text-muted-foreground">
+          {params.instrumental
+            ? "Using the score from Advanced instead of the timeline (clear it to use the timeline). Its tempo is fitted to this length."
+            : "Song length follows the lyrics; generation stops here if it runs longer. Shorter caps use less VRAM."}
+        </p>
+      )}
+
+      {timelineActive && (
+        <div className="flex flex-col gap-3 border-t border-border/60 pt-3">
+          <span className="label-caps">Arrangement</span>
+          <TimelineEditor value={params.timeline} onChange={(t) => set("timeline", t)} songKey={params.key} onSongKeyChange={(k) => set("key", k)} />
+        </div>
+      )}
 
       <Collapsible open={advanced} onOpenChange={setAdvanced}>
-        <CollapsibleTrigger asChild>
-          <Button variant="ghost" size="sm" className="-ml-2.5 text-muted-foreground">
-            <ChevronDownIcon className={advanced ? "rotate-180 transition-transform" : "transition-transform"} />
-            Advanced
-          </Button>
+        <CollapsibleTrigger className="flex items-center gap-1.5 text-xs font-semibold tracking-[0.12em] text-muted-foreground uppercase hover:text-foreground">
+          <ChevronDownIcon className={cn("size-4 transition-transform", advanced && "rotate-180")} />
+          Advanced: guidance, sampling, flow steps, custom score
         </CollapsibleTrigger>
-        <CollapsibleContent className="mt-3 flex flex-col gap-5">
-          <div className="flex flex-col gap-2">
-            <div className="flex items-center justify-between">
-              <Label htmlFor="cfg-auto">Guidance (CFG)</Label>
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <span>Auto</span>
-                <Switch
-                  id="cfg-auto"
-                  checked={params.cfg_scale === null}
-                  onCheckedChange={(auto) => set("cfg_scale", auto ? null : 1.2)}
-                />
-              </div>
-            </div>
-            {params.cfg_scale !== null && (
-              <Slider
-                aria-label="Guidance scale"
-                min={1}
-                max={3}
-                step={0.05}
-                value={[params.cfg_scale]}
-                onValueChange={([v]) => set("cfg_scale", v)}
-              />
-            )}
-            <p className="text-xs text-muted-foreground">
-              {params.cfg_scale === null
-                ? "Model default (1.0, or 1.01 with planning off)."
-                : `${params.cfg_scale.toFixed(2)}: stronger adherence to style and lyrics. Values above 1 run two passes and use more VRAM.`}
-            </p>
-          </div>
-          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-            <SliderField id="temperature" label="Temperature" value={params.temperature} display={params.temperature.toFixed(2)} min={0.5} max={1.5} step={0.05} onChange={(v) => set("temperature", v)} />
-            <SliderField id="top-p" label="Top-p" value={params.top_p} display={params.top_p.toFixed(2)} min={0.5} max={1} step={0.01} onChange={(v) => set("top_p", v)} />
-            <SliderField id="top-k" label="Top-k" value={params.top_k} min={10} max={500} step={10} onChange={(v) => set("top_k", v)} />
-            <SliderField id="rep" label="Repetition penalty" value={params.repetition_penalty} display={params.repetition_penalty.toFixed(2)} min={1} max={1.5} step={0.01} onChange={(v) => set("repetition_penalty", v)} />
-            <SliderField id="steps" label="Flow steps" hint="Acoustic detail vs. speed. Default 32." value={params.ode_steps} min={8} max={64} step={1} onChange={(v) => set("ode_steps", v)} />
+        <CollapsibleContent className="mt-3 flex flex-col gap-4">
+          <div className={cn(PARAM_ROW, "grid-cols-3 max-md:grid-cols-2")}>
+            <ParamKnob
+              label="Guidance"
+              value={params.cfg_scale ?? 1}
+              min={1}
+              max={3}
+              step={0.05}
+              decimals={2}
+              display={params.cfg_scale === null ? "Auto" : undefined}
+              hint="Classifier-free guidance. Auto is the model default (1.0, or 1.01 with planning off). Higher adheres more to style and lyrics; values above 1 run two passes and use more VRAM."
+              onChange={(v) => set("cfg_scale", v)}
+              adornment={
+                <button
+                  title={params.cfg_scale === null ? "Set the guidance by hand" : "Back to the model default"}
+                  onClick={() => set("cfg_scale", params.cfg_scale === null ? 1.2 : null)}
+                  className={cn("text-[10px] font-semibold tracking-wider hover:text-primary", params.cfg_scale === null ? "text-primary" : "text-muted-foreground")}
+                >
+                  AUTO
+                </button>
+              }
+            />
+            <ParamKnob label="Temperature" value={params.temperature} min={0.5} max={1.5} step={0.05} decimals={2} defaultValue={DEFAULT_PARAMS.temperature} onChange={(v) => set("temperature", v)} />
+            <ParamKnob label="Top-p" value={params.top_p} min={0.5} max={1} step={0.01} decimals={2} defaultValue={DEFAULT_PARAMS.top_p} onChange={(v) => set("top_p", v)} />
+            <ParamKnob label="Top-k" value={params.top_k} min={10} max={500} step={10} decimals={0} defaultValue={DEFAULT_PARAMS.top_k} onChange={(v) => set("top_k", v)} />
+            <ParamKnob label="Repetition" hint="Repetition penalty" value={params.repetition_penalty} min={1} max={1.5} step={0.01} decimals={2} defaultValue={DEFAULT_PARAMS.repetition_penalty} onChange={(v) => set("repetition_penalty", v)} />
+            <ParamKnob label="Flow steps" hint="Acoustic detail vs. speed. Default 32." value={params.ode_steps} min={8} max={64} step={1} decimals={0} defaultValue={DEFAULT_PARAMS.ode_steps} onChange={(v) => set("ode_steps", v)} />
           </div>
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between gap-3">
@@ -326,7 +311,7 @@ export function GenerateForm({
               />
             </div>
             {transcribing && job && (
-              <div className="flex items-start gap-3 rounded-md border p-3">
+              <div className="panel-inset flex items-start gap-3 p-3">
                 <div className="min-w-0 flex-1">
                   <JobProgress job={job} />
                 </div>
@@ -335,23 +320,30 @@ export function GenerateForm({
                 </Button>
               </div>
             )}
-            <Textarea
-              id="abc"
-              rows={5}
-              className="max-h-96 font-mono text-xs"
-              placeholder="Paste or edit a score (e.g. one downloaded from a previous song) to control melody and chords, or import one from a recording."
-              value={params.abc}
-              onChange={(e) => set("abc", e.target.value)}
-            />
+            <div className="panel-inset bg-[#191c1e]">
+              <textarea
+                id="abc"
+                rows={5}
+                className="block max-h-96 w-full resize-y bg-transparent px-4 py-2.5 font-mono text-xs text-foreground outline-none placeholder:text-muted-foreground/60"
+                placeholder="Paste or edit a score (e.g. one downloaded from a previous song) to control melody and chords, or import one from a recording."
+                value={params.abc}
+                onChange={(e) => set("abc", e.target.value)}
+              />
+            </div>
             <p className="text-xs text-muted-foreground">
               Import from audio transcribes a recording's melody with SheetSage2 and switches Planning to Melody only, so YuE2
               plays that tune in your style (with your lyrics, if any) and writes its own accompaniment.
             </p>
           </div>
-          <Button variant="outline" size="sm" className="self-start" onClick={() => {
+          <Button
+            variant="outline"
+            size="sm"
+            className="self-start"
+            onClick={() => {
               const { cfg_scale, temperature, top_p, top_k, repetition_penalty, ode_steps, abc } = DEFAULT_PARAMS
               onChange({ ...params, cfg_scale, temperature, top_p, top_k, repetition_penalty, ode_steps, abc })
-            }}>
+            }}
+          >
             Reset advanced to defaults
           </Button>
         </CollapsibleContent>
